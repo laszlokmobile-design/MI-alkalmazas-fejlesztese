@@ -1,7 +1,7 @@
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)
 ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=flat&logo=streamlit&logoColor=white)
-![Google Gemini](https://img.shields.io/badge/Google%20Gemini-8E75B2?style=flat&logo=googlegemini&logoColor=white)
+![Groq](https://img.shields.io/badge/Groq-F55036?style=flat&logo=groq&logoColor=white)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-FC5E20?style=flat)
 ![MongoDB](https://img.shields.io/badge/MongoDB-4EA94B?style=flat&logo=mongodb&logoColor=white)
 ![Pydantic](https://img.shields.io/badge/Pydantic-E92063?style=flat&logo=pydantic&logoColor=white)
@@ -14,7 +14,7 @@ A projekt célja, hogy a hagyományos "Jupyter Notebook" szintű kísérletezés
 
 ##  RAG és a "Memória"
 
-A modern Nagy Nyelvi Modellek (LLM-ek, mint a Gemini) lenyűgözőek, de van két komoly kihívás velük kapcsolatban:
+A modern Nagy Nyelvi Modellek (LLM-ek, mint a Llama vagy Qwen) lenyűgözőek, dz van két komoly kihívás velük kapcsolatban:
 1. **Nincs friss/privát tudásuk:** Nem látnak bele a vállalatod belső dokumentumaiba.
 2. **"Amnéziásak":** Minden HTTP kérést tiszta lappal kezdenek, nem emlékszenek az egy perccel ezelőtt feltett kérdésedre.
 
@@ -60,26 +60,14 @@ Kattints az Add Connection gombra.
 A fenti parancssorba írd be: mongodb://mongo:27017 majd nyomj Entert.
 > (Megjegyzés: A Docker belső hálózata miatt a host nevünk mongo, nem pedig localhost!)
 
-## 3. A Szolgáltatások Futtatása (Makefile)
-A backendet és a frontendet két külön terminálablakban kell futtatnod!
+## 3. A Szolgáltatások Futtatása (start.py)
 
-A Backend API indítása:
-Nyiss egy terminált, és add ki az alábbi parancsot (indul a `http://localhost:8000` címen).
-```bash
-make run-api
-```
-
-UI indítása:
-Nyiss egy ÚJ terminálablakot (a + ikonnal), és indítsd el a felhasználói felületet:
-
-```bash
-make run-app
-```
+A programoz készült egy indító szkript is, amely egyszerre indítja a frontendet és a backendet az alkalmazás gyökérmappájában található "start.py" néven érhető el.
 
 > Ez automatikusan megnyitja a böngészőben a Streamlit alkalmazást (jellemzően a http://localhost:8501 címen).
 
 ### 3. Multimodális Gépi Látás (Vision)
-A rendszer képes képeket (számlákat, diagramokat, vizuális adatokat) fogadni és feldolgozni a Gemini 1.5 Flash modell segítségével, ami közvetlenül strukturált adatokat vagy elemzést generál a bináris fájlokból.
+A rendszer képes képeket (számlákat, diagramokat, vizuális adatokat) fogadni és feldolgozni a Qwen modell segítségével, ami közvetlenül strukturált adatokat vagy elemzést generál a bináris fájlokból.
 
 ###  Az Adatfolyam Vizualizációja (Multimodális Látvány)
 Az alábbi ábra bemutatja, hogyan utazik egy képes-szöveges kérés a kliensgéptől egészen az MI szerveréig és vissza:
@@ -89,15 +77,15 @@ sequenceDiagram
     actor User as Felhasználó (Streamlit)
     participant API as FastAPI Backend
     participant Mongo as MongoDB
-    participant Gemini as Google Gemini API
+    participant Groq as Groq API (Llama / Qwen)
 
     User->>API: 1. POST /chat_with_image (Kép bytes + Kérdés text)
     activate API
     API->>API: 2. Kép memóriába konvertálása (PIL / io.BytesIO)
-    API->>Gemini: 3. generate_content([Kép, Kérdés])
-    activate Gemini
-    Gemini-->>API: 4. Elemzés / Válasz visszatérése
-    deactivate Gemini
+    API->>Groq: 3. chat.completions.create([Kép, Kérdés])
+    activate Groq
+    Groq-->>API: 4. Elemzés / Válasz visszatérése
+    deactivate Groq
     API->>Mongo: 5. Kérés és Válasz aszinkron mentése (Chat History)
     Mongo-->>API: Sikeres mentés (Ack)
     API-->>User: 6. JSON válasz (Szöveg + Képfájl metaadat)
@@ -108,18 +96,15 @@ sequenceDiagram
 
 ```
 /
-├── .devcontainer/
-│   ├── devcontainer.json
-│   └── docker-compose.yml    # Itt van definiálva a Python és a MongoDB konténer
+├── start.py                # Egységes indító szkript (Backend + Frontend)
 ├── src/
 │   ├── backend/          
-│   │   └── api.py            # FastAPI végpontok (RAG és Chat logika)
-│   └── frontend/
-│       └── app.py            # Streamlit UI (Feltöltés és Chat felület)
-├── chroma_db/                # Lokális vektoradatbázis (automatikusan létrejön)
-├── requirements.txt          # Függőségek (FastAPI, Streamlit, motor, chromadb, stb.)
-├── Makefile                  # Egyszerűsített parancsok futtatáshoz
-└── .env                      # API kulcsok (NE KÜLDD BE GITHUB-RA!)
+│   │   └── api.py          # FastAPI végpontok (RAG, Chat és Vision logika)
+│   └── client/
+│       └── app.py          # Streamlit UI (Feltöltés, Chat és Waldo modul)
+├── chroma_db/              # Lokális vektoradatbázis (automatikusan létrejön)
+├── requirements.txt        # Függőségek (FastAPI, Streamlit, motor, chromadb, groq stb.)
+└── .env                    # API kulcsok (NE KÜLDD BE GITHUB-RA!)
 ```
 ---
 
