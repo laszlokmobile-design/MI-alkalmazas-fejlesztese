@@ -112,21 +112,55 @@ with tab3:
             st.error("Szerver hiba.")
 
 with tab4:
-    st.header("👁️ Llama 3.2 Vision Képelemzés")
-    uploaded_file = st.file_uploader("Válassz egy képet...", type=["jpg", "jpeg", "png"])
+    st.header("👁️ Quen 3.8 Vision Többképes Elemzés")
+    uploaded_files = st.file_uploader(
+        "Válassz ki egy vagy több képet...",
+        type=["jpg", "jpeg", "png"],
+        accept_multiple_files=True,
+    )
 
-    if uploaded_file is not None:
-        st.image(uploaded_file, caption="Feltöltött kép", width='stretch')
-        vision_prompt = st.text_input("Mit szeretnél tudni a képről?",
-                                      value="Írd le részletesen, mi látható ezen a képen.")
+    if uploaded_files:
+        # Megjelenítjük az összes feltöltött képet egymás mellett / alatt
+        for uploaded_file in uploaded_files:
+            st.image(
+                uploaded_file, caption=f"Feltöltve: {uploaded_file.name}", width=300
+            )
 
-        if st.button("Kép Elemzése Groq Vision-nel 🚀", type="primary"):
-            with st.spinner('A Llama 3.2 Vision elemzi a képet...'):
+        vision_prompt = st.text_input(
+            "Mit szeretnél tudni ezekről a képekről?",
+            value="Hasonlítsd össze ezeket a képeket, vagy írd le, mik láthatók rajtuk.",
+            key="multi_vision_prompt",
+        )
+
+        if st.button(
+            "Képek Elemzése Groq Vision-nel 🚀", type="primary"
+        ):
+            with st.spinner(
+                "A multimodális modell elemzi a feltöltött képeket..."
+            ):
                 try:
-                    files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                    data = {"session_id": st.session_state.session_id, "prompt": vision_prompt}
+                    # Több fájl csomagolása a requests.post számára (List of tuples)
+                    files = [
+                        (
+                            "files",
+                            (
+                                file.name,
+                                file.getvalue(),
+                                file.type or "image/jpeg",
+                            ),
+                        )
+                        for file in uploaded_files
+                    ]
+                    data = {
+                        "session_id": st.session_state.session_id,
+                        "prompt": vision_prompt,
+                    }
 
-                    res = requests.post(f"{API_BASE_URL}/chat_with_image", files=files, data=data)
+                    res = requests.post(
+                        f"{API_BASE_URL}/chat_with_image",
+                        files=files,
+                        data=data,
+                    )
 
                     if res.status_code == 200:
                         st.success("Sikeres elemzés!")
