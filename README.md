@@ -23,7 +23,7 @@ A projekt célja, hogy a hagyományos "Jupyter Notebook" szintű kísérletezés
 
 ##  RAG és a "Memória"
 
-A modern Nagy Nyelvi Modellek (LLM-ek, mint a Llama vagy Qwen) lenyűgözőek, dz van két komoly kihívás velük kapcsolatban:
+A modern Nagy Nyelvi Modellek (LLM-ek, mint a Llama vagy Qwen) lenyűgözőek, de van két komoly kihívás velük kapcsolatban:
 1. **Nincs friss/privát tudásuk:** Nem látnak bele a vállalatod belső dokumentumaiba.
 2. **"Amnéziásak":** Minden HTTP kérést tiszta lappal kezdenek, nem emlékszenek az egy perccel ezelőtt feltett kérdésedre.
 
