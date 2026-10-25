@@ -8,7 +8,7 @@
 
 # Projekt előrehaladása
 
-### 📌 Összegzés a te beadandó struktúrájához:
+### 📌 Összegzés a beadandó struktúrájához:
 * **Patch (Minimum):** Groq LPU migráció (Gemini lecserélése, aszinkron kliens).
 * **Minor (Közép):** Több kép egyidejű feltöltése és feldolgozása a Gépi Látás (Vision) modulban (*Multi-image support*).
 * **Major (Haladó):** A **Waldo Kereső modul** (5. fül, PIL rajzolás, Regex koordináta-kinyerés, aszinkron `ThreadPoolExecutor` folyamatkövetés).
