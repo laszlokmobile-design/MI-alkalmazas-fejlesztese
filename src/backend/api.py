@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from typing import TypedDict, cast, Any
+from typing import TypedDict, cast, Any, List
 
 import asyncio
 import base64
@@ -66,7 +66,7 @@ app = TypedFastAPI(
     title="RAG, FastAPI és ChromaDB példa (Groq LPU-val)",
     version="1.0.0",
     description=(
-        "Gyors RAG és Vision megvalósítás Groq LPU és Llama 3 modellek "
+        "Gyors RAG és Vision megvalósítás Groq LPU és Quen 3 modellek "
         "segítségével."
     ),
 )
@@ -127,7 +127,7 @@ async def ask_rag(query: QueryInput, request: Request):
 
         # ITT VOLT A HIBA - Javítva helyes Groq hívásra:
         response = await cast(Any, groq_client.chat.completions).create(
-            model="llama-3.3-70b-versatile",
+            model="qwen/qwen3.8-27b",
             messages=cast(Any, [{"role": "user", "content": augmented_prompt}]),
             temperature=0.2,
             max_tokens=800,
@@ -225,44 +225,43 @@ async def chat_with_image(
     request: Request,
     session_id: str = Form(...),
     prompt: str = Form(...),
-    file: UploadFile = File(...),
+    files: List[UploadFile] = File(...),  # Itt változott: fájlok listája
 ):
     state = get_app_state(request)
     groq_client = state.groq_client
     chat_coll = state.chat_collection
 
     try:
-        image_bytes = await file.read()
-        base64_image = base64.b64encode(image_bytes).decode("utf-8")
-        mime_type = file.content_type or "image/jpeg"
+        # Felépítjük a multimodális üzenet tartalmát (szöveg + összes kép)
+        content_items = [{"type": "text", "text": prompt}]
+        filenames = []
+
+        for file in files:
+            image_bytes = await file.read()
+            base64_image = base64.b64encode(image_bytes).decode("utf-8")
+            mime_type = file.content_type or "image/jpeg"
+            filenames.append(file.filename)
+
+            content_items.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime_type};base64,{base64_image}"},
+            })
 
         response = await cast(Any, groq_client.chat.completions).create(
             model="qwen/qwen3.8-27b",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{mime_type};base64,{base64_image}"
-                            },
-                        },
-                    ],
-                }
-            ],
+            messages=[{"role": "user", "content": content_items}],
             max_tokens=800,
         )
 
         reply_text = response.choices[0].message.content
         now = datetime.datetime.utcnow()
+        filenames_str = ", ".join(filenames)
 
         await chat_coll.insert_many([
             {
                 "session_id": session_id,
                 "role": "user",
-                "content": f"[Kép feltöltve: {file.filename}] - {prompt}",
+                "content": f"[Képek feltöltve: {filenames_str}] - {prompt}",
                 "timestamp": now,
             },
             {
@@ -276,7 +275,7 @@ async def chat_with_image(
         return {
             "session_id": session_id,
             "response": reply_text,
-            "filename": file.filename,
+            "filenames": filenames,
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
