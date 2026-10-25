@@ -2,10 +2,19 @@ import uuid
 import streamlit as st
 import requests
 import base64
+import mimetypes
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 API_BASE_URL = "http://127.0.0.1:8000"
 
 st.set_page_config(page_title="MI RAG Rendszer (Groq LPU)", page_icon="⚡", layout="centered")
+
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
 st.title("⚡ Villámgyors RAG Rendszer Groq LPU-val")
 
@@ -129,6 +138,15 @@ with tab4:
 
 with tab5:
     st.header("🎯 Speciális Waldo Kereső Modul")
+    with st.expander("💡 Tájékoztatás az MI modell működéséről és korlátairól", expanded=True):
+        st.markdown("""
+        Az olyan modellek, mint a Qwen vagy más nagyméretű LLM-ek, általános feladatokra lettek optimalizálva (szövegértés, általános képelemzés), és **nincsenek feltétlenül feltanítva az apró, rejtett objektumok milliméter pontos (pixel-szintű) lokalizációjára.** 
+
+        Ezért a keresés során az alábbi jelenségek fordulhatnak elő:
+
+        * **🔍 Vizuális hallucináció és pontatlanság:** Az ilyen rendkívül zsúfolt, aprólékos képeken a modell nem képes elég precízen elemezni a pixel-szintű részleteket. Emiatt könnyen összetévesztheti a karaktereket (például a kék ruhás figurákat vagy a tömeget) a keresett személlyel.
+        * **🧩 A szöveg és a koordináták szétcsúszása:** A modell belső működése során a szöveges válasz (amit a nyelvi modul generál) és a számszerű koordináták (amit a térbeli/látási modul ad meg) külön úton jönnek létre. Ebből adódhat az a paradox helyzet, hogy a szövegben okosnak vagy magabiztosnak tűnő leírást ad, de a koordináták valami teljesen más helyre mutatnak.
+        """)
     st.caption("Válassz az alábbi előre betöltött képek közül, hogy mit küldjünk el az MI-nek:")
 
     # Választás a három kép között
@@ -182,35 +200,118 @@ with tab5:
 
     # Ha van érvényes kép, jöhet a prompt és a küldés
     if waldo_file_bytes is not None:
-        default_hint = "Waldonak fekete szemüvege van, piros-fehér csíkos sapkája bojttal, és egy bot a kezében."
+        default_hint = "Waldonak fekete szemüvege van, piros-fehér csíkos sapkája bojttal."
         hint_input = st.text_area("Súgás vagy kérdés az MI-nek ehhez a képhez:", value=default_hint)
 
         if st.button("🚀 Kép Küldése az MI-nek", type="primary"):
-            with st.spinner('A Groq LPU elemzi a kiválasztott képet...'):
-                try:
-                    waldo_prompt = (
-                        f"Kérlek, válaszolj magyarul. "
-                        f"A felhasználó ezt a képet küldte: {waldo_filename}. "
-                        f"Feladat / Súgás: {hint_input}. "
-                        f"Elemezd a képet ennek megfelelően!"
+            waldo_prompt = (
+                f"Kérlek, válaszolj magyarul. "
+                f"A felhasználó ezt a képet küldte: {waldo_filename}. "
+                f"Feladat / Súgás: {hint_input}. "
+                f"Elemezd a képet ennek megfelelően!"
+            )
+
+            mime_type, _ = mimetypes.guess_type(waldo_filename)
+            mime_type = mime_type or "image/jpeg"
+
+            files = {
+                "file": (waldo_filename, waldo_file_bytes, mime_type)
+            }
+            data = {
+                "session_id": st.session_state.session_id,
+                "prompt": waldo_prompt
+            }
+
+            session_id = st.session_state.session_id
+
+            status_box = st.status(
+                "A Waldo keresése folyamatban...",
+                expanded=True
+            )
+            progress_bar = st.progress(0)
+            progress_text = st.empty()
+
+            try:
+                # A POST kérés külön szálon fut, így a fő szál
+                # közben le tudja kérdezni a folyamat állapotát.
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(
+                        requests.post,
+                        f"{API_BASE_URL}/waldo_search",
+                        files=files,
+                        data=data,
+                        timeout=300
                     )
 
-                    files = {"file": (waldo_filename, waldo_file_bytes, "image/jpeg")}
-                    data = {"session_id": st.session_state.session_id, "prompt": waldo_prompt}
+                    while not future.done():
+                        try:
+                            progress_res = requests.get(
+                                f"{API_BASE_URL}/waldo_progress/{session_id}",
+                                timeout=5
+                            )
 
-                    # Itt hívjuk a backend végpontot
-                    res = requests.post(f"{API_BASE_URL}/waldo_search", files=files, data=data)
+                            if progress_res.status_code == 200:
+                                progress_data = progress_res.json()
+                                current = progress_data.get("current", 0)
+                                total = max(progress_data.get("total", 9), 1)
+                                message = progress_data.get(
+                                    "message",
+                                    "A keresés folyamatban..."
+                                )
 
-                    if res.status_code == 200:
-                        res_data = res.json()
-                        st.success("Sikeres elemzés!")
-                        st.markdown("### 🤖 MI Válasza:")
-                        st.info(res_data.get("response"))
+                                progress_bar.progress(
+                                    min(current / total, 1.0)
+                                )
+                                progress_text.write(message)
 
-                        if "annotated_image" in res_data:
-                            annotated_bytes = base64.b64decode(res_data["annotated_image"])
-                            st.image(annotated_bytes, caption="🎯 Eredmény (Backend által feldolgozva/bekarikázva)", width='stretch')
+                        except requests.RequestException:
+                            progress_text.write(
+                                "A keresés fut; a folyamatjelzés "
+                                "átmenetileg nem érhető el."
+                            )
+
+                        time.sleep(0.5)
+
+                    # Megvárjuk és kiolvassuk a POST eredményét.
+                    res = future.result()
+
+                progress_bar.progress(1.0)
+
+                if res.status_code == 200:
+                    res_data = res.json()
+
+                    status_box.update(
+                        label="A keresés befejeződött.",
+                        state="complete",
+                        expanded=False
+                    )
+
+                    if res_data.get("found", False):
+                        st.success("A modell talált egy lehetséges helyet.")
                     else:
-                        st.error(res.text)
-                except Exception as e:
-                    st.error(f"Hiba történt: {e}")
+                        st.warning("A modell nem talált megbízható találatot.")
+
+                    st.markdown("### 🤖 MI válasza")
+                    st.info(res_data.get("response", "Nincs szöveges válasz."))
+
+                    annotated_image = res_data.get("annotated_image")
+                    if annotated_image:
+                        annotated_bytes = base64.b64decode(annotated_image)
+                        st.image(
+                            annotated_bytes,
+                            caption="🎯 Feldolgozott kép – a piros téglalap a lehetséges találat",
+                            width="stretch"
+                        )
+                else:
+                    status_box.update(
+                        label="A keresés hibával végződött.",
+                        state="error"
+                    )
+                    st.error(f"Szerverhiba: {res.status_code}\n{res.text}")
+
+            except Exception as e:
+                status_box.update(
+                    label="Hiba történt a keresés közben.",
+                    state="error"
+                )
+                st.error(f"Hiba történt: {e}")
