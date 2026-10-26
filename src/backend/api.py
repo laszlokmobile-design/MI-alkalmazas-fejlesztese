@@ -320,16 +320,19 @@ async def waldo_search(
             f"Feladat: keresd meg Waldo/Wally figurát ezen a teljes képen.\n"
             f"Felhasználói támpont: {prompt}\n\n"
             "Waldo tipikus ismertetőjegye a piros-fehér csíkos sapka, "
-            "a szemüveg és a piros-fehér csíkos felső. Csak akkor jelöld "
+            "a barna színű haj,"
+            "a fekete szemüveg és a piros-fehér csíkos felső."
+            "Nem minden esetben látható az egész teste. Olykor csak az feje."
+            " Csak akkor jelöld "
             "meg, ha tényleg látható. Ne találj ki koordinátákat.\n"
             "A válaszod első sora pontosan az alábbiak egyike legyen:\n"
             "FOUND: NO\n"
             "vagy\n"
             "FOUND: YES [ymin, xmin, ymax, xmax]\n\n"
             "A koordináták a TELJES KÉPRE vonatkozzanak, 0–1000 közötti skálán. "
-            "A sorrend: felső, bal, alsó, jobb. A téglalap Waldo teljes alakját fogja körül."
-            "Szövegesen is írd le, hogy szerinted hol van Waldo."
-            "Ha egy képen piros karika is szerepel, akkor azt külön vizsgáld meg (pl: waldo_solution.jpg)."
+            "A sorrend: felső, bal, alsó, jobb. A téglalap Waldo a képen ábrázolt alakját fogja körül."
+            "Szövegesen is írd le, hogy szerinted hol van Waldo, illetve mit ábrázol a kép."
+            "Ha a képen Paint program által előre pirossal megjelölt rész is szerepel, akkor a benne található objektumokat külön vizsgáld meg."
         )
 
         response = await cast(Any, groq_client.chat.completions).create(
@@ -429,3 +432,183 @@ async def get_waldo_progress(session_id: str):
             "done": False,
         },
     )
+
+
+@app.post("/add_image_rag")
+async def add_image_rag(
+        request: Request,
+        description: str = Form(""),
+        file: UploadFile = File(...)
+):
+    # 1. Szigorú JPG / JPEG formátum korlátozás ellenőrzése
+    allowed_types = ["image/jpeg", "image/jpg"]
+    filename_lower = file.filename.lower() if file.filename else ""
+
+    if file.content_type not in allowed_types and not filename_lower.endswith((".jpg", ".jpeg")):
+        raise HTTPException(
+            status_code=400,
+            detail="Csak JPG vagy JPEG formátumú képek tölthetők fel a RAG tudásbázisba!"
+        )
+
+    state = get_app_state(request)
+    groq_client = state.groq_client
+
+    try:
+        image_bytes = await file.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="Üres képfájl érkezett.")
+
+        base64_image = base64.b64encode(image_bytes).decode("utf-8")
+        mime_type = file.content_type or "image/jpeg"
+
+        # 2. Ha nem adott meg a felhasználó leírást, a Groq Vision generál egyet automatikusan
+        final_description = description.strip()
+        if not final_description:
+            vision_prompt = (
+                "Írj egy részletes, pontos leírást erről a képről magyarul, "
+                "melyet egy tudásbázisban fogunk tárolni kereshetőségi céllal."
+            )
+            vision_response = await cast(Any, groq_client.chat.completions).create(
+                model="qwen/qwen3.8-27b",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": vision_prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}}
+                        ]
+                    }
+                ],
+                max_tokens=300,
+            )
+            final_description = vision_response.choices[0].message.content or "Kép leírás nem elérhető."
+
+        doc_id = str(uuid.uuid4())
+
+        # 3. Mentés a ChromaDB-be (a kép leírása + metaadatok)
+        collection.add(
+            documents=[f"[Kép - {file.filename}]: {final_description}"],
+            ids=[doc_id],
+            metadatas=[{"filename": file.filename, "type": "image"}]
+        )
+
+        return {
+            "status": "ok",
+            "doc_id": doc_id,
+            "filename": file.filename,
+            "generated_description": final_description,
+            "message": "A kép sikeresen elemezve és rögzítve lett a tudásbázisban!"
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+@app.post("/detect_and_crop")
+async def detect_and_crop(
+    request: Request,
+    session_id: str = Form(...),
+    prompt: str = Form(...),
+    file: UploadFile = File(...),
+):
+    # Szigorú JPG / JPEG korlátozás itt is beépíthető
+    allowed_types = ["image/jpeg", "image/jpg"]
+    filename_lower = file.filename.lower() if file.filename else ""
+    if file.content_type not in allowed_types and not filename_lower.endswith((".jpg", ".jpeg")):
+        raise HTTPException(status_code=400, detail="Csak JPG vagy JPEG formátumú képek tölthetők fel!")
+
+    state = get_app_state(request)
+    groq_client = state.groq_client
+
+    try:
+        image_bytes = await file.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="Üres képfájl érkezett.")
+
+        try:
+            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="A feltöltött fájl nem olvasható képfájl.") from exc
+
+        width, height = image.size
+        base64_image = base64.b64encode(image_bytes).decode("utf-8")
+        mime_type = file.content_type or "image/jpeg"
+
+        detection_prompt = (
+            f"Feladat: keresd meg a következő objektumot/elemet a képen: '{prompt}'.\n"
+            "A válaszod első sora pontosan az alábbiak egyike legyen:\n"
+            "FOUND: NO\n"
+            "vagy\n"
+            "FOUND: YES [ymin, xmin, ymax, xmax]\n\n"
+            "A koordináták a TELJES KÉPRE vonatkozzanak, 0–1000 közötti skálán. "
+            "A sorrend: felső, bal, alsó, jobb. "
+            "Szövegesen is indokold meg röviden a választásodat a koordináták alatt."
+        )
+
+        response = await cast(Any, groq_client.chat.completions).create(
+            model="qwen/qwen3.8-27b",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": detection_prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}}
+                    ]
+                }
+            ],
+            max_tokens=300,
+            temperature=0,
+        )
+        reply_text = response.choices[0].message.content or ""
+
+        match = re.search(
+            r"FOUND\s*:\s*YES\s*\[\s*(\d{1,4})\s*,\s*(\d{1,4})\s*,\s*(\d{1,4})\s*,\s*(\d{1,4})\s*\]",
+            reply_text,
+            re.IGNORECASE,
+        )
+
+        if not match or re.search(r"FOUND\s*:\s*NO", reply_text, re.IGNORECASE):
+            return {
+                "session_id": session_id,
+                "response": "A modell nem találta meg a keresett objektumot a képen.",
+                "found": False,
+                "annotated_image": None,
+                "cropped_image": None,
+            }
+
+        ymin, xmin, ymax, xmax = map(int, match.groups())
+
+        # Pixel koordináták kiszámítása
+        bx1 = round(xmin * width / 1000)
+        by1 = round(ymin * height / 1000)
+        bx2 = round(xmax * width / 1000)
+        by2 = round(ymax * height / 1000)
+        box = [bx1, by1, bx2, by2]
+
+        # 1. Teljes kép bejelölése piros kerettel
+        annotated = image.copy()
+        draw = ImageDraw.Draw(annotated)
+        draw.rectangle(box, outline="red", width=max(4, round(min(width, height) / 250)))
+
+        buffered_annotated = io.BytesIO()
+        annotated.save(buffered_annotated, format="JPEG", quality=92)
+        annotated_base64 = base64.b64encode(buffered_annotated.getvalue()).decode("utf-8")
+
+        # 2. Automatikus Képkivágás (Crop) a kijelölt részletről, hogy kinagyítva is látszódjon!
+        cropped = image.crop((bx1, by1, bx2, by2))
+        buffered_cropped = io.BytesIO()
+        cropped.save(buffered_cropped, format="JPEG", quality=92)
+        cropped_base64 = base64.b64encode(buffered_cropped.getvalue()).decode("utf-8")
+
+        return {
+            "session_id": session_id,
+            "response": f"Sikeres detektálás!\n{reply_text}",
+            "found": True,
+            "box": box,
+            "annotated_image": annotated_base64,
+            "cropped_image": cropped_base64,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
