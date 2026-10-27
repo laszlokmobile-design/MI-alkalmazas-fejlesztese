@@ -132,12 +132,6 @@ with tab2:
         with st.chat_message("user" if msg["role"] == "user" else "assistant"):
             st.markdown(msg["content"])
 
-    # 2. UTÁNA hívjuk meg a chat_input-ot, aminek a doboza így garantáltan a lenyitott üzenetek alatt fog megjelenni
-    # Először kirajzoljuk a korábbi üzeneteket
-    for msg in st.session_state.chat_history:
-        with st.chat_message("user" if msg["role"] == "user" else "assistant"):
-            st.markdown(msg["content"])
-
     # Hagyományos szövegmező és gomb, amit pontosan oda teszünk, ahová szeretnéd (a válaszok alá)
     with st.form(key="chat_form", clear_on_submit=True):
         prompt = st.text_input("Beszélgess a memóriával rendelkező asszisztenssel...",
@@ -202,6 +196,7 @@ with tab3:
         except Exception as e:
             st.error(f"Szerver hiba: {e}")
 
+# --- TAB 4: Gépi Látás és Képvágás ---
 # --- TAB 4: Gépi Látás és Képvágás ---
 with tab4:
     st.header("👁️ Gépi Látás & Objektumdetektálás")
