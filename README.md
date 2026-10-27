@@ -68,13 +68,12 @@ A projekt futtatásához kétféle módszer közül választhatsz:
 
 ### B) Lokális futtatás (Docker nélkül, a `start.py` szkripttel)
 - **MongoDB**: Helyileg telepítve kell lennie a gépeden (és futnia kell a `localhost:27017` porton).
-- **Python 3.10+**: A helyi szkriptekhez és a Streamlit frontendhez.
+- **Python 3.10+**: A helyi szkriptekhez és a Streamlit frontendhez. Pycharm használata esetében be kell állítani az interpretert és a külső könyvtárakat telepíteni kell(`pip install -r requirements.txt`).
 - **Groq API Kulcs**: Szerezz be egyet a [Groq Console](https://console.groq.com/)-ról és írd be a .env fájlba.
-  
+
 ```env
 GROQ_API_KEY=gsk_saját_groq_kulcsod_ide
 ```
-Pycharm esetében be kell állítani az interpretert és a külső könyvtárakat telepíteni kell(`pip install -r requirements.txt`).
 
 ## 2. A Szolgáltatások Futtatása (`start.py` vagy `start.bat`)
 
