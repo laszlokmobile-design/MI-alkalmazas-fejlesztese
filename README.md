@@ -58,9 +58,16 @@ A projekt a legmodernebb ipari standardokra (Docker Compose) épül:
 
 ### 1. Előfeltételek és Beállítások
 A projekt futtatásához az alábbi eszközökre van szükség:
-- **Docker Desktop**: Futnia kell a gépeden (a MongoDB konténer és a backend miatt).
+### A) Docker-alapú futtatás (Ajánlott és leggyorsabb, indítószkript: start.bat)
+- **Docker Desktop**: Futnia kell a gépeden (ez automatikusan felhúzza és kezeli a MongoDB adatbázist a háttérben).
 - **Python 3.10+**: A helyi szkriptekhez és a Streamlit frontendhez.
 - **Groq API Kulcs**: Szerezz be egyet a [Groq Console](https://console.groq.com/)-ról és írd be a .env fájlba.
+
+### B) Lokális futtatás (Docker nélkül, a `start.py` szkripttel)
+- **MongoDB**: Helyileg telepítve kell lennie a gépeden (és futnia kell a `localhost:27017` porton).
+- **Python 3.10+**: A helyi szkriptekhez és a Streamlit frontendhez.
+- **Groq API Kulcs**: Szerezz be egyet a [Groq Console](https://console.groq.com/)-ról és írd be a .env fájlba.
+  
 ```env
 GROQ_API_KEY=gsk_saját_groq_kulcsod_ide
 ```
@@ -75,11 +82,11 @@ Kattints az Add Connection gombra.
 A fenti parancssorba írd be: mongodb://mongo:27017 majd nyomj Entert.
 > (Megjegyzés: A Docker belső hálózata miatt a host nevünk mongo, nem pedig localhost!)
 
-## 3. A Szolgáltatások Futtatása (start.py)
+## 3. A Szolgáltatások Futtatása (start.py vagy start.bat)
 
-A programoz készült egy indító szkript is, amely egyszerre indítja a frontendet és a backendet az alkalmazás gyökérmappájában található "start.py" néven érhető el.
-
-> Ez automatikusan megnyitja a böngészőben a Streamlit alkalmazást (jellemzően a http://localhost:8501 címen).
+A programoz készült kettő darab indító szkript is.
+**start.py**, amely egyszerre indítja a frontendet és a backendet az alkalmazás gyökérmappájában található. Ez automatikusan megnyitja a böngészőben a Streamlit alkalmazást (jellemzően a http://localhost:8501 címen). Az alkalmazás korlátlan működéséhez ekkor szükség van egy telepített MongoDB futtatáshoz is.
+**start.bat** futtatásához Docker
 
 ### 4. Multimodális Gépi Látás (Vision)
 A rendszer képes képeket (számlákat, diagramokat, vizuális adatokat) fogadni és feldolgozni a Qwen modell segítségével, ami közvetlenül strukturált adatokat vagy elemzést generál a bináris fájlokból.
