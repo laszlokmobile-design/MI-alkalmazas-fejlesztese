@@ -79,7 +79,7 @@ A programoz készült egy indító szkript is, amely egyszerre indítja a fronte
 
 > Ez automatikusan megnyitja a böngészőben a Streamlit alkalmazást (jellemzően a http://localhost:8501 címen).
 
-### 3. Multimodális Gépi Látás (Vision)
+### 4. Multimodális Gépi Látás (Vision)
 A rendszer képes képeket (számlákat, diagramokat, vizuális adatokat) fogadni és feldolgozni a Qwen modell segítségével, ami közvetlenül strukturált adatokat vagy elemzést generál a bináris fájlokból.
 
 ###  Az Adatfolyam Vizualizációja (Multimodális Látvány)
@@ -121,8 +121,17 @@ sequenceDiagram
 ```
 ---
 
-## ⚠️ Ismert jelenségek (Hibatűrés)
+## ⚠️ Ismert jelenségek és hibatűrés (Groq LPU Alapokon)
 
-Mivel az alkalmazás élő felhőszolgáltatásokra (Google Gemini API) támaszkodik, előfordulhatnak terhelési tüskék a szervereiken. 
-* Ha a felületen `503 UNAVAILABLE` (Leterheltség) hibát kapsz: a Google szerverei ideiglenesen túlterheltek. Várj pár másodpercet és próbáld újra elküldeni az üzenetet.
-* Ha a feltöltött képnél a Streamlit figyelmeztetést dob, ellenőrizd, hogy a kiterjesztés szabványos `jpg`, `jpeg` vagy `png` formátumú-e, és mérete nem haladja meg a 20MB-ot.
+Mivel az alkalmazás a **Groq felhőszolgáltatására** és a **Qwen multimodális modellekre** támaszkodik, előfordulhatnak átmeneti terhelési tüskék vagy korlátozások:
+
+- **HTTP 429 (Rate Limit / Túl sok kérés):** 
+  A Groq API percenkénti kérés- (RPM) vagy tokenkorlátba (`TPM`) ütközhet, ha túl sűrűn küldesz kéréseket (különösen nagy méretű képek elemzésekor). 
+  * *Megoldás:* Várj 10-20 másodpercet, amiből a token-kvóta automatikusan feltöltődik, majd próbáld újra.
+  
+- **HTTP 503 / 502 (Szerveroldali leterheltség):** 
+  A Groq LPU szerverei vagy a modell hosztolása átmenetileg nem elérhető. 
+  * *Megoldás:* A kódodban lévő `tenancy` retry mechanizmus automatikusan megpróbálja újra 3 alkalommal, de ha manuálisan is hibát kapsz, ismételd meg a műveletet pár másodperc múlva.
+
+- **Képformátum vagy méret hiba:** 
+  Ha a feltöltött képnél hiba lép fel, ellenőrizd, hogy a fájl kiterjesztése szabványos `jpg`, `jpeg` vagy `png` legyen, és a fájlméret ne lépje túl a megengedett kereteket.
