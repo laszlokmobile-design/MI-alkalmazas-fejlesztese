@@ -110,6 +110,7 @@ sequenceDiagram
 ```
 /
 ├── start.py                # Egységes indító szkript (Backend + Frontend)
+├── start.bat               # Docker indító szkriptje
 ├── src/
 │   ├── backend/          
 │   │   └── api.py          # FastAPI végpontok (RAG, Chat és Vision logika)
@@ -117,6 +118,8 @@ sequenceDiagram
 │       └── app.py          # Streamlit UI (Feltöltés, Chat és Waldo modul)
 ├── chroma_db/              # Lokális vektoradatbázis (automatikusan létrejön)
 ├── requirements.txt        # Függőségek (FastAPI, Streamlit, motor, chromadb, groq stb.)
+├── docker-compose.yml
+├── Dockerfile
 └── .env                    # API kulcsok (NE KÜLDD BE GITHUB-RA!)
 ```
 ---
