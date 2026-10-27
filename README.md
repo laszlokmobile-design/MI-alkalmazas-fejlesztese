@@ -9,9 +9,9 @@
 # Projekt előrehaladása
 
 ### 📌 Elvárások a beadandóval kapcsolatban:
-• Patch (Minimum szint): A meglévő projekt leágaztatása (forkolása) és átültetése egy másik környezetbe (például Groq alapokra)
-• Minor (Középszint): A meglévő funkciók továbbfejlesztése és kiegészítése (például RAG-alapú kontextusbevonás a képelemzés során).
-• Major (Haladó szint): Teljesen új funkció vagy alrendszer implementálása (például a WALDO finder modul felépítése).
+* **Patch (Minimum szint):** A meglévő projekt leágaztatása (forkolása) és átültetése egy másik környezetbe (például Groq alapokra)
+* **Minor (Középszint):** A meglévő funkciók továbbfejlesztése és kiegészítése (például RAG-alapú kontextusbevonás a képelemzés során).
+* **Major (Haladó szint):** Teljesen új funkció vagy alrendszer implementálása (például a WALDO finder modul felépítése).
 
 ### 📌 Összegzés a beadandó struktúrájához:
 * **Patch (Minimum):** Groq LPU migráció (Gemini lecserélése, aszinkron kliens). Forkolás linkje: https://github.com/laszlokmobile-design/complex-ai-applications
