@@ -74,6 +74,7 @@ A projekt futtatásához kétféle módszer közül választhatsz:
 ```env
 GROQ_API_KEY=gsk_saját_groq_kulcsod_ide
 ```
+Pycharm esetében be kell állítani az interpretert és a külső könyvtárakat telepíteni kell(`pip install -r requirements.txt`).
 
 ## 2. A Szolgáltatások Futtatása (`start.py` vagy `start.bat`)
 
