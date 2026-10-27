@@ -15,8 +15,8 @@
 
 ### 📌 Összegzés a beadandó struktúrájához:
 * **Patch (Minimum):** Groq LPU migráció (Gemini lecserélése, aszinkron kliens). Forkolás linkje: https://github.com/laszlokmobile-design/complex-ai-applications
-* **Minor (Közép):** Több kép egyidejű feltöltése és feldolgozása a Gépi Látás (Vision) modulban (*Multi-image support*).
-* **Major (Haladó):** A **Waldo Kereső modul** (5. fül, PIL rajzolás, Regex koordináta-kinyerés, aszinkron `ThreadPoolExecutor` folyamatkövetés).
+* **Minor (Közép):** Több kép egyidejű feltöltése és feldolgozása a Gépi Látás (Vision) modulban (*Multi-image support*), Képi alapú RAG-gal történő kiegészítése a meglévő csak szöveges mellé. A chatelés során a RAG-ban lévő képeket is el tudja a program küldeni a használatban lévő modellnek.
+* **Major (Haladó):** A **Waldo Kereső modul** (5. fül, PIL rajzolás, Regex koordináta-kinyerés, aszinkron `ThreadPoolExecutor` folyamatkövetés) valamint az **Objektumdetektálás és kivágás** (4. fül 2. alfül, A beküldött képből kivág egy kisebb részt a szövegdobozban megadott paraméterek szerint)**.
 ---
 
 # Komplex MI alkalmazások fejlesztése
@@ -27,7 +27,7 @@ A projekt célja, hogy a hagyományos "Jupyter Notebook" szintű kísérletezés
 
 ##  RAG és a "Memória"
 
-A modern Nagy Nyelvi Modellek (LLM-ek, mint a Proq Qwen modellje) lenyűgöző, de van két komoly kihívás vele kapcsolatban:
+„A modern Nagy Nyelvi Modellek (LLM-ek, mint a Groq LPU-n futó Qwen modellek) lenyűgözőek, de van két komoly kihívás vele kapcsolatban:”
 1. **Nincs friss/privát tudásuk:** Nem látnak bele a vállalatod belső dokumentumaiba.
 2. **"Amnéziásak":** Minden HTTP kérést tiszta lappal kezdenek, nem emlékszenek az egy perccel ezelőtt feltett kérdésedre.
 
