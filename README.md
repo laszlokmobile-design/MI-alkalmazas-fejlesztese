@@ -50,7 +50,7 @@ A projekt a legmodernebb ipari standardokra (Docker Compose) épül:
 * **Backend:** `FastAPI` (Aszinkron API), `Motor` (Aszinkron MongoDB driver) és `Pillow` (Memórián belüli képkezelés).
 * **Frontend:** `Streamlit` (Modern, Python-alapú chat UI).
 * **Adatbázisok:** `ChromaDB` (vektoroknak) és `MongoDB` (munkameneteknek és chat logoknak).
-* **MI Integráció:** Hivatalos `google-genai` SDK.
+* **MI Integráció:** `groq` Python SDK (`AsyncGroq` és Qwen multimodális modellek).
 
 ---
 
@@ -60,7 +60,7 @@ A projekt a legmodernebb ipari standardokra (Docker Compose) épül:
 Győződj meg róla, hogy a VS Code-ban a DevContainer felépült (a Docker Compose alapján). 
 Létre kell hoznod egy `.env` nevű fájlt a projekt gyökerében:
 ```env
-GEMINI_API_KEY=ide_masold_a_sajat_kulcsod
+GROQ_API_KEY=gsk_saját_groq_kulcsod_ide
 ```
 
 ## 2. Csatlakozás a MongoDB-hez (VS Code Plugin)
