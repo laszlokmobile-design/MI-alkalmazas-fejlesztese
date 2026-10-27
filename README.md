@@ -46,7 +46,7 @@ Ahhoz, hogy a gép emlékezzen a beszélgetés fonalára, bevezettünk egy **Mon
 ## Technológiai Stack és Architektúra
 
 A projekt a legmodernebb ipari standardokra (Docker Compose) épül:
-* **Környezet:** Docker DevContainer (Python App + MongoDB konténerek közös hálózaton).
+* **Környezet**: Docker Compose (Python App + MongoDB konténerek közös hálózaton).
 * **Backend:** `FastAPI` (Aszinkron API), `Motor` (Aszinkron MongoDB driver) és `Pillow` (Memórián belüli képkezelés).
 * **Frontend:** `Streamlit` (Modern, Python-alapú chat UI).
 * **Adatbázisok:** `ChromaDB` (vektoroknak) és `MongoDB` (munkameneteknek és chat logoknak).
