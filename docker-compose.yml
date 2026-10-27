@@ -1,25 +1,28 @@
 version: '3.8'
 
 services:
-  # 1. A fejlesztői környezetünk (Ebbe lépünk be VS Code-dal)
-  app:
-    image: mcr.microsoft.com/devcontainers/python:3.11
-    volumes:
-      # A projekt gyökerét (egy mappával kijjebb) becsatoljuk a konténerbe
-      - ../:/workspaces/complex-ai-applications:cached
-    # Ez tartja életben a konténert, miközben kódolunk
-    command: sleep infinity
-    # Megvárjuk, amíg az adatbázis elindul
-    depends_on:
-      - mongo
-
-  # 2. A MongoDB adatbázis (Háttérszolgáltatás)
   mongo:
     image: mongo:latest
+    container_name: mongo_db
     restart: unless-stopped
+    ports:
+      - "27017:27017"
     volumes:
       - mongo-data:/data/db
 
+  app:
+    build: .
+    container_name: ai_rag_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+      - "8501:8501"
+    environment:
+      - GROQ_API_KEY=ide kell beírnod a groq api kulcsodat idézőjelek nélkül
+    depends_on:
+      - mongo
+    volumes:
+      - .:/app
+
 volumes:
-  # Ez biztosítja, hogy a DevContainer újraindításakor ne vesszenek el a chat üzenetek
   mongo-data:
