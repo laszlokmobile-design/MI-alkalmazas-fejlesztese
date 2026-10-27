@@ -57,8 +57,10 @@ A projekt a legmodernebb ipari standardokra (Docker Compose) épül:
 ## Fejlesztői Környezet Indítása
 
 ### 1. Előfeltételek és Beállítások
-Győződj meg róla, hogy a VS Code-ban a DevContainer felépült (a Docker Compose alapján). 
-Létre kell hoznod egy `.env` nevű fájlt a projekt gyökerében:
+A projekt futtatásához az alábbi eszközökre van szükség:
+- **Docker Desktop**: Futnia kell a gépeden (a MongoDB konténer és a backend miatt).
+- **Python 3.10+**: A helyi szkriptekhez és a Streamlit frontendhez.
+- **Groq API Kulcs**: Szerezz be egyet a [Groq Console](https://console.groq.com/)-ról és írd be a .env fájlba.
 ```env
 GROQ_API_KEY=gsk_saját_groq_kulcsod_ide
 ```
