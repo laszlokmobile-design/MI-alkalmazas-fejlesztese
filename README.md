@@ -16,7 +16,7 @@
 ### 📌 Összegzés a beadandó struktúrájához:
 * **Patch (Minimum):** Groq LPU migráció (Gemini lecserélése, aszinkron kliens). Forkolás linkje: https://github.com/laszlokmobile-design/complex-ai-applications
 * **Minor (Közép):** Több kép egyidejű feltöltése és feldolgozása a Gépi Látás (Vision) modulban (*Multi-image support*), Képi alapú RAG-gal történő kiegészítése a meglévő csak szöveges mellé. A chatelés során a RAG-ban lévő képeket is el tudja a program küldeni a használatban lévő modellnek.
-* **Major (Haladó):** A **Waldo Kereső modul** (5. fül, PIL rajzolás, Regex koordináta-kinyerés, aszinkron `ThreadPoolExecutor` folyamatkövetés) valamint az **Objektumdetektálás és kivágás** (4. fül 2. alfül, A beküldött képből kivág egy kisebb részt a szövegdobozban megadott paraméterek szerint)**.
+* **Major (Haladó):** A **Waldo Kereső modul** (5. fül, PIL rajzolás: a kapott koordináta pontokat összeköti a program, Regex koordináta-kinyerés: a modell pontokat ad meg amelyen belül határozza meg Waldo helyzetét, aszinkron `ThreadPoolExecutor` folyamatkövetés) valamint az **Objektumdetektálás és kivágás** (4. fül 2. alfül, A beküldött képből kivág egy kisebb részt a szövegdobozban megadott paraméterek szerint)**.
 ---
 
 # Komplex MI alkalmazások fejlesztése
