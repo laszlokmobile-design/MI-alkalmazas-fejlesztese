@@ -5,13 +5,15 @@ import asyncio
 import base64
 import datetime
 import io
+import os
+from pathlib import Path
 import re
 import uuid
 
 import chromadb
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, FileResponse
 from groq import AsyncGroq
 from motor.core import AgnosticCollection
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -22,8 +24,11 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 load_dotenv()
 
+# Feltöltött képek mappája a szerveren
+UPLOAD_DIR = Path("./uploads")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-# A Starlette State objektum típusos kiterjesztése.
+
 class AppState(State):
     groq_client: AsyncGroq
     mongo_client: AsyncIOMotorClient
@@ -35,7 +40,6 @@ class TypedFastAPI(FastAPI):
 
 
 def get_app_state(request: Request) -> AppState:
-    """Típusos hozzáférés a FastAPI alkalmazás állapotához."""
     typed_app = cast(TypedFastAPI, request.app)
     return cast(AppState, typed_app.state)
 
@@ -64,9 +68,9 @@ class ChatInput(BaseModel):
 app = TypedFastAPI(
     lifespan=lifespan,
     title="RAG, FastAPI és ChromaDB példa (Groq LPU-val)",
-    version="1.0.0",
+    version="1.1.0",
     description=(
-        "Gyors RAG és Vision megvalósítás Groq LPU és Quen 3 modellek "
+        "Gyors RAG és Multimodális megvalósítás Groq LPU és Qwen modellek "
         "segítségével."
     ),
 )
@@ -89,7 +93,11 @@ class QueryInput(BaseModel):
 async def add_document(doc: DocumentInput):
     doc_id = str(uuid.uuid4())
     try:
-        collection.add(documents=[doc.text], ids=[doc_id])
+        collection.add(
+            documents=[doc.text],
+            ids=[doc_id],
+            metadatas=[{"type": "text"}]
+        )
         return {
             "status": "ok",
             "doc_id": doc_id,
@@ -105,37 +113,59 @@ async def ask_rag(query: QueryInput, request: Request):
     groq_client = state.groq_client
 
     try:
-        results = collection.query(query_texts=[query.prompt], n_results=2)
+        results = collection.query(
+            query_texts=[query.prompt],
+            n_results=2,
+            include=["documents", "metadatas"]
+        )
         context_list = results.get("documents", [[]])[0]
-        context = " ".join(context_list) if context_list else ""
+        metadata_list = results.get("metadatas", [[]])[0]
 
-        if not context:
+        context_text = " ".join(context_list) if context_list else ""
+
+        if not context_text:
             return {
-                "response": (
-                    "Nincs elegendő információ az adatbázisban a válaszhoz."
-                )
+                "response": "Nincs elegendő információ az adatbázisban a válaszhoz.",
+                "matched_images": []
             }
 
+        content_items = []
         augmented_prompt = f"""
-        Válaszold meg a felhasználó kérdését a megadott kontextus alapján. 
+        Válaszold meg a felhasználó kérdését a megadott kontextus alapján (szövegek és mellékelt képek). 
         Ha a kontextus nem tartalmazza a választ, mondd meg, hogy nem tudod.
 
-        Kontextus: {context}
+        Kontextus szöveg: {context_text}
 
         Kérdés: {query.prompt}
         """
+        content_items.append({"type": "text", "text": augmented_prompt})
 
-        # ITT VOLT A HIBA - Javítva helyes Groq hívásra:
+        matched_images = []
+
+        for meta in metadata_list:
+            if meta and meta.get("type") == "image" and "filepath" in meta:
+                file_path = meta["filepath"]
+                if os.path.exists(file_path):
+                    matched_images.append(os.path.basename(file_path))
+                    with open(file_path, "rb") as img_file:
+                        img_bytes = img_file.read()
+                        b64_img = base64.b64encode(img_bytes).decode("utf-8")
+                        content_items.append({
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+                        })
+
         response = await cast(Any, groq_client.chat.completions).create(
             model="qwen/qwen3.8-27b",
-            messages=cast(Any, [{"role": "user", "content": augmented_prompt}]),
+            messages=cast(Any, [{"role": "user", "content": content_items}]),
             temperature=0.2,
             max_tokens=800,
         )
 
         return {
-            "retrieved_context": context,
+            "retrieved_context": context_text,
             "llm_response": response.choices[0].message.content,
+            "matched_images": matched_images,
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -144,18 +174,28 @@ async def ask_rag(query: QueryInput, request: Request):
 @app.get("/list_documents")
 def list_documents():
     try:
-        results = collection.get()
+        results = collection.get(include=["documents", "metadatas"])
         docs = []
         if results["ids"]:
             for i in range(len(results["ids"])):
+                metadata = results["metadatas"][i] if results["metadatas"] and i < len(results["metadatas"]) else {}
                 docs.append({
                     "id": results["ids"][i],
                     "text": results["documents"][i],
+                    "metadata": metadata
                 })
 
         return {"total_documents": len(docs), "documents": docs}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/get_image/{filename}", include_in_schema=False)
+def get_uploaded_image(filename: str):
+    file_path = UPLOAD_DIR / filename
+    if file_path.exists():
+        return FileResponse(file_path)
+    raise HTTPException(status_code=404, detail="A kép nem található.")
 
 
 @app.get("/", include_in_schema=False)
@@ -222,17 +262,16 @@ async def chat_with_memory(chat_input: ChatInput, request: Request):
 
 @app.post("/chat_with_image")
 async def chat_with_image(
-    request: Request,
-    session_id: str = Form(...),
-    prompt: str = Form(...),
-    files: List[UploadFile] = File(...),  # Itt változott: fájlok listája
+        request: Request,
+        session_id: str = Form(...),
+        prompt: str = Form(...),
+        files: List[UploadFile] = File(...),
 ):
     state = get_app_state(request)
     groq_client = state.groq_client
     chat_coll = state.chat_collection
 
     try:
-        # Felépítjük a multimodális üzenet tartalmát (szöveg + összes kép)
         content_items = [{"type": "text", "text": prompt}]
         filenames = []
 
@@ -250,7 +289,7 @@ async def chat_with_image(
         response = await cast(Any, groq_client.chat.completions).create(
             model="qwen/qwen3.8-27b",
             messages=[{"role": "user", "content": content_items}],
-            max_tokens=800,
+            max_tokens=900,
         )
 
         reply_text = response.choices[0].message.content
@@ -288,7 +327,6 @@ async def waldo_search(
         prompt: str = Form(...),
         file: UploadFile = File(...),
 ):
-    """Waldo keresése közvetlenül a teljes képen."""
     state = get_app_state(request)
     groq_client = state.groq_client
 
@@ -315,24 +353,20 @@ async def waldo_search(
             "done": False,
         }
 
-        # Egységes, teljes képes prompt
         waldo_prompt = (
             f"Feladat: keresd meg Waldo/Wally figurát ezen a teljes képen.\n"
             f"Felhasználói támpont: {prompt}\n\n"
-            "Waldo tipikus ismertetőjegye a piros-fehér csíkos sapka, "
-            "a barna színű haj,"
-            "a fekete szemüveg és a piros-fehér csíkos felső."
-            "Nem minden esetben látható az egész teste. Olykor csak az feje."
-            " Csak akkor jelöld "
-            "meg, ha tényleg látható. Ne találj ki koordinátákat.\n"
+            "Waldo tipikus ismertetőjegye a piros-fehér csíkos sapka, a barna színű haj, "
+            "a fekete szemüveg és a piros-fehér csíkos felső. Olykor csak a feje látható.\n"
             "A válaszod első sora pontosan az alábbiak egyike legyen:\n"
             "FOUND: NO\n"
             "vagy\n"
             "FOUND: YES [ymin, xmin, ymax, xmax]\n\n"
             "A koordináták a TELJES KÉPRE vonatkozzanak, 0–1000 közötti skálán. "
-            "A sorrend: felső, bal, alsó, jobb. A téglalap Waldo a képen ábrázolt alakját fogja körül."
-            "Szövegesen is írd le, hogy szerinted hol van Waldo, illetve mit ábrázol a kép."
-            "Ha a képen Paint program által előre pirossal megjelölt rész is szerepel, akkor a benne található objektumokat külön vizsgáld meg."
+            "A sorrend: felső, bal, alsó, jobb."
+            "Ha olyan képet kapsz, amire ráhhelyeztek Paint programmal egy piros kört, akkor a benne lévő részt külön vizsgáld meg."
+            "Jellemezd szerinted mit ábrázol a kép"
+            "Ha megtaláltad Waldot akkor szövegesen is írd le hol találtad meg"
         )
 
         response = await cast(Any, groq_client.chat.completions).create(
@@ -356,7 +390,6 @@ async def waldo_search(
         )
         reply_text = response.choices[0].message.content or ""
 
-        # Válasz ellenőrzése és kinyerése
         match = re.search(
             r"FOUND\s*:\s*YES\s*\[\s*(\d{1,4})\s*,\s*"
             r"(\d{1,4})\s*,\s*(\d{1,4})\s*,\s*(\d{1,4})\s*\]",
@@ -381,7 +414,6 @@ async def waldo_search(
 
         ymin, xmin, ymax, xmax = map(int, match.groups())
 
-        # Koordináták átváltása pixelbe a teljes kép mérete alapján
         bx1 = round(xmin * width / 1000)
         by1 = round(ymin * height / 1000)
         bx2 = round(xmax * width / 1000)
@@ -389,7 +421,6 @@ async def waldo_search(
 
         box = [bx1, by1, bx2, by2]
 
-        # Kép berajzolása
         annotated = image.copy()
         draw = ImageDraw.Draw(annotated)
         draw.rectangle(
@@ -438,80 +469,93 @@ async def get_waldo_progress(session_id: str):
 async def add_image_rag(
         request: Request,
         description: str = Form(""),
-        file: UploadFile = File(...)
+        files: List[UploadFile] = File(...)
 ):
-    # 1. Szigorú JPG / JPEG formátum korlátozás ellenőrzése
     allowed_types = ["image/jpeg", "image/jpg"]
-    filename_lower = file.filename.lower() if file.filename else ""
-
-    if file.content_type not in allowed_types and not filename_lower.endswith((".jpg", ".jpeg")):
-        raise HTTPException(
-            status_code=400,
-            detail="Csak JPG vagy JPEG formátumú képek tölthetők fel a RAG tudásbázisba!"
-        )
-
     state = get_app_state(request)
     groq_client = state.groq_client
 
+    added_documents = []
+
     try:
-        image_bytes = await file.read()
-        if not image_bytes:
-            raise HTTPException(status_code=400, detail="Üres képfájl érkezett.")
+        for file in files:
+            filename_lower = file.filename.lower() if file.filename else ""
+            if file.content_type not in allowed_types and not filename_lower.endswith((".jpg", ".jpeg")):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Csak JPG vagy JPEG formátumú képek tölthetők fel! Helytelen fájl: {file.filename}"
+                )
 
-        base64_image = base64.b64encode(image_bytes).decode("utf-8")
-        mime_type = file.content_type or "image/jpeg"
+            image_bytes = await file.read()
+            if not image_bytes:
+                continue
 
-        # 2. Ha nem adott meg a felhasználó leírást, a Groq Vision generál egyet automatikusan
-        final_description = description.strip()
-        if not final_description:
-            vision_prompt = (
-                "Írj egy részletes, pontos leírást erről a képről magyarul, "
-                "melyet egy tudásbázisban fogunk tárolni kereshetőségi céllal."
+            unique_filename = f"{uuid.uuid4()}_{file.filename}"
+            file_path = UPLOAD_DIR / unique_filename
+            with open(file_path, "wb") as buffer:
+                buffer.write(image_bytes)
+
+            base64_image = base64.b64encode(image_bytes).decode("utf-8")
+            mime_type = file.content_type or "image/jpeg"
+
+            final_description = description.strip()
+            if not final_description:
+                vision_prompt = (
+                    "Jellemezd részletesen és pontosan ezt a képet magyarul, "
+                    "hogy egy tudásbázisban tárolva hatékonyan kereshető legyen."
+                )
+                vision_response = await cast(Any, groq_client.chat.completions).create(
+                    model="qwen/qwen3.8-27b",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": vision_prompt},
+                                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}}
+                            ]
+                        }
+                    ],
+                    max_tokens=2000,
+                )
+                final_description = vision_response.choices[0].message.content or "Kép leírás nem elérhető."
+
+            doc_id = str(uuid.uuid4())
+
+            collection.add(
+                documents=[f"[Kép - {file.filename}]: {final_description}"],
+                ids=[doc_id],
+                metadatas=[{
+                    "filename": file.filename,
+                    "type": "image",
+                    "filepath": str(file_path)
+                }]
             )
-            vision_response = await cast(Any, groq_client.chat.completions).create(
-                model="qwen/qwen3.8-27b",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": vision_prompt},
-                            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}}
-                        ]
-                    }
-                ],
-                max_tokens=300,
-            )
-            final_description = vision_response.choices[0].message.content or "Kép leírás nem elérhető."
 
-        doc_id = str(uuid.uuid4())
-
-        # 3. Mentés a ChromaDB-be (a kép leírása + metaadatok)
-        collection.add(
-            documents=[f"[Kép - {file.filename}]: {final_description}"],
-            ids=[doc_id],
-            metadatas=[{"filename": file.filename, "type": "image"}]
-        )
+            added_documents.append({
+                "doc_id": doc_id,
+                "filename": file.filename,
+                "generated_description": final_description
+            })
 
         return {
             "status": "ok",
-            "doc_id": doc_id,
-            "filename": file.filename,
-            "generated_description": final_description,
-            "message": "A kép sikeresen elemezve és rögzítve lett a tudásbázisban!"
+            "added_count": len(added_documents),
+            "documents": added_documents,
+            "message": "A képek sikeresen elemezve és rögzítve lettek a tudásbázisban!"
         }
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+
 @app.post("/detect_and_crop")
 async def detect_and_crop(
-    request: Request,
-    session_id: str = Form(...),
-    prompt: str = Form(...),
-    file: UploadFile = File(...),
+        request: Request,
+        session_id: str = Form(...),
+        prompt: str = Form(...),
+        file: UploadFile = File(...),
 ):
-    # Szigorú JPG / JPEG korlátozás itt is beépíthető
     allowed_types = ["image/jpeg", "image/jpg"]
     filename_lower = file.filename.lower() if file.filename else ""
     if file.content_type not in allowed_types and not filename_lower.endswith((".jpg", ".jpeg")):
@@ -541,8 +585,7 @@ async def detect_and_crop(
             "vagy\n"
             "FOUND: YES [ymin, xmin, ymax, xmax]\n\n"
             "A koordináták a TELJES KÉPRE vonatkozzanak, 0–1000 közötti skálán. "
-            "A sorrend: felső, bal, alsó, jobb. "
-            "Szövegesen is indokold meg röviden a választásodat a koordináták alatt."
+            "A sorrend: felső, bal, alsó, jobb."
         )
 
         response = await cast(Any, groq_client.chat.completions).create(
@@ -578,14 +621,12 @@ async def detect_and_crop(
 
         ymin, xmin, ymax, xmax = map(int, match.groups())
 
-        # Pixel koordináták kiszámítása
         bx1 = round(xmin * width / 1000)
         by1 = round(ymin * height / 1000)
         bx2 = round(xmax * width / 1000)
         by2 = round(ymax * height / 1000)
         box = [bx1, by1, bx2, by2]
 
-        # 1. Teljes kép bejelölése piros kerettel
         annotated = image.copy()
         draw = ImageDraw.Draw(annotated)
         draw.rectangle(box, outline="red", width=max(4, round(min(width, height) / 250)))
@@ -594,7 +635,6 @@ async def detect_and_crop(
         annotated.save(buffered_annotated, format="JPEG", quality=92)
         annotated_base64 = base64.b64encode(buffered_annotated.getvalue()).decode("utf-8")
 
-        # 2. Automatikus Képkivágás (Crop) a kijelölt részletről, hogy kinagyítva is látszódjon!
         cropped = image.crop((bx1, by1, bx2, by2))
         buffered_cropped = io.BytesIO()
         cropped.save(buffered_cropped, format="JPEG", quality=92)
