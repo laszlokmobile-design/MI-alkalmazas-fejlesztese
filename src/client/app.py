@@ -3,6 +3,7 @@ import streamlit as st
 import requests
 import base64
 import mimetypes
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -18,12 +19,12 @@ if "chat_history" not in st.session_state:
 
 st.title("⚡ Villámgyors RAG Rendszer Groq LPU-val")
 
-# BAL OLDALI SÁV (Csak a Session ID és infók maradnak itt)
+# BAL OLDALI SÁV
 st.sidebar.title("🧭 Információ")
 st.sidebar.divider()
 st.sidebar.caption(f"Session ID:\n`{st.session_state.get('session_id', 'Nincs')}`")
 
-# --- FŐOLDALI FÜLEK (5 fős struktúra) ---
+# --- FŐOLDALI FÜLEK ---
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📚 Dokumentum Feltöltés",
     "💬 Chat Memóriával",
