@@ -203,7 +203,6 @@ with tab3:
             st.error(f"Szerver hiba: {e}")
 
 # --- TAB 4: Gépi Látás és Képvágás ---
-# --- TAB 4: Gépi Látás és Képvágás ---
 with tab4:
     st.header("👁️ Gépi Látás & Objektumdetektálás")
 
