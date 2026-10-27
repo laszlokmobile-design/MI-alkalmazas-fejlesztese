@@ -90,7 +90,7 @@ sequenceDiagram
     actor User as Felhasználó (Streamlit)
     participant API as FastAPI Backend
     participant Mongo as MongoDB
-    participant Groq as Groq API (Llama / Qwen)
+    participant Groq as Groq API (Qwen Vision)
 
     User->>API: 1. POST /chat_with_image (Kép bytes + Kérdés text)
     activate API
