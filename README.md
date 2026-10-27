@@ -57,7 +57,9 @@ A projekt a legmodernebb ipari standardokra (Docker Compose) épül:
 ## Fejlesztői Környezet Indítása
 
 ### 1. Előfeltételek és Beállítások
-A projekt futtatásához az alábbi eszközökre van szükség:
+
+A projekt futtatásához kétféle módszer közül választhatsz:
+
 ### A) Docker-alapú futtatás (Ajánlott és leggyorsabb, indítószkript: start.bat)
 - **Docker Desktop**: Futnia kell a gépeden (ez automatikusan felhúzza és kezeli a MongoDB adatbázist a háttérben).
 - **Python 3.10+**: A helyi szkriptekhez és a Streamlit frontendhez.
