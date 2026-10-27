@@ -300,6 +300,8 @@ with tab5:
 
         - **🎨 Szín- és minta-összezavarodás (Vizuális tévedés):** 
           Mivel a modell a zsúfolt képeken egyszerre próbálja figyelni a formákat és a színeket, gyakran előfordulhat az a hiba, hogy **a piros-fehér ruhás Waldo helyett egy kék ruhás vagy más színű figurát jelöl be**. Ennek az az oka, hogy a vizuális modul a keresett formát (pl. a sapkát vagy a csíkokat) összetéveszti a környezetében lévő más, kontrasztos figurákkal.
+        
+        Súgó: Waldo helyzete a nagy fesztiváli képen: [255, 812, 355, 888] 
         """)
 
     image_choice = st.radio(
