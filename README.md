@@ -27,7 +27,7 @@ A projekt célja, hogy a hagyományos "Jupyter Notebook" szintű kísérletezés
 
 ##  RAG és a "Memória"
 
-A modern Nagy Nyelvi Modellek (LLM-ek, mint a Llama vagy Qwen) lenyűgözőek, de van két komoly kihívás velük kapcsolatban:
+A modern Nagy Nyelvi Modellek (LLM-ek, mint a Proq Qwen modellje) lenyűgöző, de van két komoly kihívás vele kapcsolatban:
 1. **Nincs friss/privát tudásuk:** Nem látnak bele a vállalatod belső dokumentumaiba.
 2. **"Amnéziásak":** Minden HTTP kérést tiszta lappal kezdenek, nem emlékszenek az egy perccel ezelőtt feltett kérdésedre.
 
@@ -60,7 +60,7 @@ A projekt a legmodernebb ipari standardokra (Docker Compose) épül:
 
 A projekt futtatásához kétféle módszer közül választhatsz:
 
-### A) Docker-alapú futtatás (Ajánlott és leggyorsabb, indítószkript: start.bat)
+### A) Docker-alapú futtatás (Ajánlott és leggyorsabb, indítószkript: `start.bat`)
 - **Docker Desktop**: Futnia kell a gépeden (ez automatikusan felhúzza és kezeli a MongoDB adatbázist a háttérben).
 - **Python 3.10+**: A helyi szkriptekhez és a Streamlit frontendhez.
 - **Groq API Kulcs**: Szerezz be egyet a [Groq Console](https://console.groq.com/)-ról és írd be a .env fájlba.
@@ -74,23 +74,13 @@ A projekt futtatásához kétféle módszer közül választhatsz:
 GROQ_API_KEY=gsk_saját_groq_kulcsod_ide
 ```
 
-## 2. Csatlakozás a MongoDB-hez (VS Code Plugin)
-Nem kell vaktában kódolnod! A DevContainer tartalmaz egy hivatalos MongoDB kiterjesztést.
-
-Kattints a VS Code bal oldali sávjában a MongoDB (falevél) ikonra.
-
-Kattints az Add Connection gombra.
-
-A fenti parancssorba írd be: mongodb://mongo:27017 majd nyomj Entert.
-> (Megjegyzés: A Docker belső hálózata miatt a host nevünk mongo, nem pedig localhost!)
-
-## 3. A Szolgáltatások Futtatása (start.py vagy start.bat)
+## 2. A Szolgáltatások Futtatása (`start.py` vagy `start.bat`)
 
 A programoz készült kettő darab indító szkript is.
 **start.py**, amely egyszerre indítja a frontendet és a backendet az alkalmazás gyökérmappájában található. Ez automatikusan megnyitja a böngészőben a Streamlit alkalmazást (jellemzően a http://localhost:8501 címen). Az alkalmazás korlátlan működéséhez ekkor szükség van egy telepített MongoDB futtatáshoz is.
-**start.bat** futtatásához Docker
+**start.bat** futtatásához Docker futtatása szükséges.
 
-### 4. Multimodális Gépi Látás (Vision)
+### 3. Multimodális Gépi Látás (Vision)
 A rendszer képes képeket (számlákat, diagramokat, vizuális adatokat) fogadni és feldolgozni a Qwen modell segítségével, ami közvetlenül strukturált adatokat vagy elemzést generál a bináris fájlokból.
 
 ###  Az Adatfolyam Vizualizációja (Multimodális Látvány)
