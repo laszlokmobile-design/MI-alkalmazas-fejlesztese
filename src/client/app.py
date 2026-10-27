@@ -33,7 +33,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🎯 Waldo Kereső"
 ])
 
-# --- TAB 1: Dokumentum Feltöltés (Szöveges + Képi RAG) ---
+# --- TAB 1: Dokumentum Feltöltés ---
 with tab1:
     st.header("Új ismeret betáplálása a Tudásbázisba")
 
@@ -52,7 +52,10 @@ with tab1:
                         response = requests.post(f"{API_BASE_URL}/add_document", json={"text": doc_text})
                         if response.status_code == 200:
                             data = response.json()
-                            st.success(f"✅ {data.get('message')}")
+                            if data:
+                                st.success(f"✅ {data.get('message', 'Siker')}")
+                            else:
+                                st.success("✅ Dokumentum sikeresen elmentve.")
                         else:
                             st.error(f"Hiba a szerveren: {response.text}")
                     except requests.exceptions.ConnectionError:
@@ -70,16 +73,19 @@ with tab1:
                 st.warning("Kérlek, tölts fel egy képet!")
             else:
                 try:
-                    files = {"file": (uploaded_rag_image.name, uploaded_rag_image.getvalue(),
-                                      uploaded_rag_image.type or "image/jpeg")}
+                    files = {"files": (uploaded_rag_image.name, uploaded_rag_image.getvalue(),
+                                       uploaded_rag_image.type or "image/jpeg")}
                     data = {"description": rag_image_description}
                     response = requests.post(f"{API_BASE_URL}/add_image_rag", files=files, data=data)
                     if response.status_code == 200:
                         res_data = response.json()
-                        st.success(f"✅ {res_data.get('message')}")
-                        st.image(uploaded_rag_image, caption=f"Feltöltve: {res_data.get('filename')}", width=300)
-                        with st.expander("📝 Generált / Mentett kontextus"):
-                            st.write(res_data.get("generated_description"))
+                        if res_data:
+                            st.success(f"✅ {res_data.get('message', 'Siker')}")
+                            st.image(uploaded_rag_image, caption=f"Feltöltve: {res_data.get('filename', uploaded_rag_image.name)}", width=300)
+                            with st.expander("📝 Generált / Mentett kontextus"):
+                                st.write(res_data.get("generated_description", ""))
+                        else:
+                            st.success("✅ Kép sikeresen rögzítve.")
                     else:
                         st.error(response.text)
                 except Exception as e:
@@ -92,15 +98,28 @@ with tab2:
     user_query = st.text_input("Kérdezz a feltöltött dokumentumokból (RAG):", key="chat_rag_query")
     if st.button("RAG Válasz 🚀", key="chat_rag_btn"):
         if user_query.strip():
-            with st.spinner('Keresés és válasz generálása Groq-kal...'):
+            with st.spinner('Keresés, képek betöltése és válasz generálása Groq-kal...'):
                 try:
                     res = requests.post(f"{API_BASE_URL}/ask_rag", json={"prompt": user_query})
                     if res.status_code == 200:
                         data = res.json()
-                        st.markdown("### 🤖 MI Válasza:")
-                        st.write(data.get("llm_response"))
-                        with st.expander("🔍 Felhasznált kontextus"):
-                            st.write(data.get("retrieved_context"))
+                        if data:
+                            st.markdown("### 🤖 MI Válasza:")
+                            st.write(data.get("llm_response", "Nincs válasz."))
+
+                            matched_images = data.get("matched_images", [])
+                            if matched_images:
+                                st.markdown("##### 🖼️ A válaszhoz felhasznált kép(ek):")
+                                cols = st.columns(len(matched_images))
+                                for idx, img_filename in enumerate(matched_images):
+                                    with cols[idx]:
+                                        img_url = f"{API_BASE_URL}/get_image/{img_filename}"
+                                        st.image(img_url, caption=img_filename, width=250)
+
+                            with st.expander("🔍 Felhasznált szöveges kontextus"):
+                                st.write(data.get("retrieved_context", ""))
+                        else:
+                            st.warning("Üres választ adott a szerver.")
                     else:
                         st.error(res.text)
                 except Exception as e:
@@ -108,32 +127,44 @@ with tab2:
 
     st.divider()
 
+    # 1. ELŐSZÖR kirajzoljuk az eddigi üzeneteket a history-ból
     for msg in st.session_state.chat_history:
         with st.chat_message("user" if msg["role"] == "user" else "assistant"):
             st.markdown(msg["content"])
 
-    if prompt := st.chat_input("Beszélgess a memóriával rendelkező asszisztenssel..."):
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    # 2. UTÁNA hívjuk meg a chat_input-ot, aminek a doboza így garantáltan a lenyitott üzenetek alatt fog megjelenni
+    # Először kirajzoljuk a korábbi üzeneteket
+    for msg in st.session_state.chat_history:
+        with st.chat_message("user" if msg["role"] == "user" else "assistant"):
+            st.markdown(msg["content"])
+
+    # Hagyományos szövegmező és gomb, amit pontosan oda teszünk, ahová szeretnéd (a válaszok alá)
+    with st.form(key="chat_form", clear_on_submit=True):
+        prompt = st.text_input("Beszélgess a memóriával rendelkező asszisztenssel...",
+                               placeholder="Írd ide az üzenetet...")
+        submit_button = st.form_submit_button("Küldés 🚀")
+
+    if submit_button and prompt.strip():
+        # Felhasználói üzenet megjelenítése
         st.session_state.chat_history.append({"role": "user", "content": prompt})
 
-        with st.chat_message("assistant"):
-            with st.spinner("Groq generálás..."):
-                try:
-                    res = requests.post(
-                        f"{API_BASE_URL}/chat",
-                        json={"session_id": st.session_state.session_id, "prompt": prompt}
-                    )
-                    if res.status_code == 200:
-                        reply = res.json().get("response")
-                        st.markdown(reply)
-                        st.session_state.chat_history.append({"role": "assistant", "content": reply})
-                    else:
-                        st.error(res.text)
-                except Exception as e:
-                    st.error(f"Hiba: {e}")
+        with st.spinner("Groq generálás..."):
+            try:
+                res = requests.post(
+                    f"{API_BASE_URL}/chat",
+                    json={"session_id": st.session_state.session_id, "prompt": prompt}
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    reply = data.get("response", "") if data else "Nincs válasz."
+                    st.session_state.chat_history.append({"role": "assistant", "content": reply})
+                    st.rerun()  # Az oldal újratöltése, hogy azonnal látszódjon az új üzenet és a mező utána maradjon
+                else:
+                    st.error(res.text)
+            except Exception as e:
+                st.error(f"Hiba: {e}")
 
-# --- TAB 3: Adatbázis ---
+# --- TAB 3: Adatbázis (Vizuális kép- és szövegmegjelenítéssel) ---
 with tab3:
     st.header("Feltöltött dokumentumok és képek")
     if st.button("Lista frissítése", key="refresh_db_btn"):
@@ -141,20 +172,45 @@ with tab3:
             res = requests.get(f"{API_BASE_URL}/list_documents")
             if res.status_code == 200:
                 data = res.json()
-                st.metric("Összes dokumentum/elem", data.get("total_documents"))
-                for doc in data.get("documents", []):
-                    st.text_area(f"ID: {doc['id']}", doc['text'], height=100, disabled=True)
-        except Exception:
-            st.error("Szerver hiba.")
+                if data is not None:
+                    st.metric("Összes dokumentum/elem", data.get("total_documents", 0))
 
-# --- TAB 4: Gépi Látás és Képvágás (Összevont modul) ---
+                    for doc in data.get("documents", []):
+                        metadata = doc.get("metadata", {}) or {}
+                        is_image = metadata.get("type") == "image"
+
+                        with st.container():
+                            if is_image:
+                                filename = metadata.get("filename", "")
+                                filepath = metadata.get("filepath", "")
+                                basename = os.path.basename(filepath) if filepath else ""
+
+                                st.markdown(f"**🖼️ Kép dokumentum** (Fájlnév: `{filename}`)")
+                                if basename:
+                                    img_url = f"{API_BASE_URL}/get_image/{basename}"
+                                    st.image(img_url, caption=filename, width=300)
+
+                                st.text_area(f"Generált leírás (ID: {doc.get('id', '')})", doc.get('text', ''), height=80, disabled=True, key=f"area_{doc.get('id', '')}")
+                            else:
+                                st.markdown(f"**📝 Szöveges dokumentum**")
+                                st.text_area(f"Tartalom (ID: {doc.get('id', '')})", doc.get('text', ''), height=100, disabled=True, key=f"area_{doc.get('id', '')}")
+                            st.divider()
+                else:
+                    st.warning("Az adatbázis válasza üres volt.")
+            else:
+                st.error(f"Szerver hiba: {res.text}")
+        except Exception as e:
+            st.error(f"Szerver hiba: {e}")
+
+# --- TAB 4: Gépi Látás és Képvágás ---
+# --- TAB 4: Gépi Látás és Képvágás ---
 with tab4:
     st.header("👁️ Gépi Látás & Objektumdetektálás")
 
     vision_sub_tab1, vision_sub_tab2 = st.tabs(["👁️ Általános Képelemzés", "✂️ Objektumdetektálás & Kivágás"])
 
     with vision_sub_tab1:
-        st.subheader("Qwen Vision Többképes Elemzés")
+        st.subheader("Qwen Vision Elemzés")
         uploaded_files = st.file_uploader(
             "Válassz ki egy vagy több képet...",
             type=["jpg", "jpeg", "png"],
@@ -167,8 +223,8 @@ with tab4:
                 st.image(uploaded_file, caption=f"Feltöltve: {uploaded_file.name}", width=300)
 
             vision_prompt = st.text_input(
-                "Mit szeretnél tudni ezekről a képekről?",
-                value="Hasonlítsd össze ezeket a képeket, vagy írd le, mik láthatók rajtuk.",
+                "Mit szeretnél tudni a kép(ek)ről?",
+                value="Írd le egy-egy mondatban mi van a képeken!",
                 key="multi_vision_prompt",
             )
 
@@ -187,8 +243,12 @@ with tab4:
                         res = requests.post(f"{API_BASE_URL}/chat_with_image", files=files, data=data)
 
                         if res.status_code == 200:
-                            st.success("Sikeres elemzés!")
-                            st.info(res.json().get("response"))
+                            res_data = res.json()
+                            if res_data:
+                                st.success("Sikeres elemzés!")
+                                st.info(res_data.get("response", "Nincs válasz."))
+                            else:
+                                st.success("Sikeres elemzés, de üres válasz érkezett.")
                         else:
                             st.error(res.text)
                     except Exception as e:
@@ -198,7 +258,7 @@ with tab4:
         st.subheader("Interaktív Objektumdetektálás & Automatikus Kivágás")
         uploaded_crop_file = st.file_uploader("Válassz ki egy JPG képet elemzésre:", type=["jpg", "jpeg"],
                                               key="crop_image_uploader")
-        detection_query = st.text_input("Mit keressek a képen?", value="Pl. az óra a falon",
+        detection_query = st.text_input("Mit keressek a képen?", value="Pl. a kép közepét emeld ki!",
                                         key="detection_query_input")
 
         if uploaded_crop_file is not None:
@@ -214,16 +274,19 @@ with tab4:
                         res = requests.post(f"{API_BASE_URL}/detect_and_crop", files=files, data=data)
                         if res.status_code == 200:
                             res_data = res.json()
-                            st.info(res_data.get("response"))
-                            if res_data.get("found", False):
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    if res_data.get("annotated_image"):
-                                        st.image(base64.b64decode(res_data.get("annotated_image")),
-                                                 caption="Berajzolva")
-                                with col2:
-                                    if res_data.get("cropped_image"):
-                                        st.image(base64.b64decode(res_data.get("cropped_image")), caption="Kivágva")
+                            if res_data:
+                                st.info(res_data.get("response", ""))
+                                if res_data.get("found", False):
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        if res_data.get("annotated_image"):
+                                            st.image(base64.b64decode(res_data.get("annotated_image")),
+                                                     caption="Berajzolva")
+                                    with col2:
+                                        if res_data.get("cropped_image"):
+                                            st.image(base64.b64decode(res_data.get("cropped_image")), caption="Kivágva")
+                            else:
+                                st.warning("Üres válasz érkezett a detektáláshoz.")
                         else:
                             st.error(res.text)
                     except Exception as e:
@@ -238,10 +301,10 @@ with tab5:
 
         Az olyan nagyméretű, multimodális modellek, mint a Qwen, általános feladatokra lettek optimalizálva, és **nincsenek feltétlenül feltanítva az apró, rejtett objektumok milliméter pontos (pixel-szintű) lokalizációjára.** Emiatt a következő jelenségek fordulhatnak elő:
 
-        * 🔀 **A szöveg és a számok külön utakon járnak:** 
+        - **🔀 A szöveg és a számok külön utakon járnak:** 
           A modell belső logikája szövegesen kitalálja a történetet (hogy hol van a figura), de a számítógépnek adandó koordinátákat egy teljesen más, statisztikai becslés alapján generálja. Így előfordulhat, hogy a válaszban okos dolgot ír, de a számok máshova mutatnak.
 
-        * 🎨 **Szín- és minta-összezavarodás (Vizuális tévedés):** 
+        - **🎨 Szín- és minta-összezavarodás (Vizuális tévedés):** 
           Mivel a modell a zsúfolt képeken egyszerre próbálja figyelni a formákat és a színeket, gyakran előfordulhat az a hiba, hogy **a piros-fehér ruhás Waldo helyett egy kék ruhás vagy más színű figurát jelöl be**. Ennek az az oka, hogy a vizuális modul a keresett formát (pl. a sapkát vagy a csíkokat) összetéveszti a környezetében lévő más, kontrasztos figurákkal.
         """)
 
@@ -324,11 +387,12 @@ with tab5:
                             progress_res = requests.get(f"{API_BASE_URL}/waldo_progress/{session_id}", timeout=5)
                             if progress_res.status_code == 200:
                                 progress_data = progress_res.json()
-                                current = progress_data.get("current", 0)
-                                total = max(progress_data.get("total", 9), 1)
-                                message = progress_data.get("message", "A keresés folyamatban...")
-                                progress_bar.progress(min(current / total, 1.0))
-                                progress_text.write(message)
+                                if progress_data:
+                                    current = progress_data.get("current", 0)
+                                    total = max(progress_data.get("total", 9), 1)
+                                    message = progress_data.get("message", "A keresés folyamatban...")
+                                    progress_bar.progress(min(current / total, 1.0))
+                                    progress_text.write(message)
                         except requests.RequestException:
                             progress_text.write("A keresés fut...")
                         time.sleep(0.5)
@@ -338,12 +402,16 @@ with tab5:
                 progress_bar.progress(1.0)
                 if res.status_code == 200:
                     res_data = res.json()
-                    status_box.update(label="A keresés befejeződött.", state="complete", expanded=False)
-                    st.success("A modell lefutott.")
-                    st.info(res_data.get("response", "Nincs szöveges válasz."))
-                    annotated_image = res_data.get("annotated_image")
-                    if annotated_image:
-                        st.image(base64.b64decode(annotated_image), caption="🎯 Találat")
+                    if res_data:
+                        status_box.update(label="A keresés befejeződött.", state="complete", expanded=False)
+                        st.success("A modell lefutott.")
+                        st.info(res_data.get("response", "Nincs szöveges válasz."))
+                        annotated_image = res_data.get("annotated_image")
+                        if annotated_image:
+                            st.image(base64.b64decode(annotated_image), caption="🎯 Találat")
+                    else:
+                        status_box.update(label="Hiba történt.", state="error")
+                        st.error("A szerver üres választ adott.")
                 else:
                     status_box.update(label="Hiba történt.", state="error")
                     st.error(res.text)
