@@ -123,6 +123,7 @@ sequenceDiagram
 │       ├── __init__.py
 │       └── app.py          # Streamlit UI (Feltöltés, Chat és Waldo modul)
 ├── chroma_db/              # Lokális vektoradatbázis (automatikusan létrejön)
+├── uploads/                # Ide kerülnek a RAG-ba betöltött képek 
 ├── requirements.txt        # Függőségek (FastAPI, Streamlit, motor, chromadb, groq stb.)
 ├── docker-compose.yml
 ├── Dockerfile
