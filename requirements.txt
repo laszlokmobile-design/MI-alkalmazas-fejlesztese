@@ -11,3 +11,5 @@ pillow>=10.0.0
 python-dotenv>=1.0.1
 motor>=3.4.0
 starlette
+neo4j>=5.0.0
+streamlit-agraph>=0.0.45
