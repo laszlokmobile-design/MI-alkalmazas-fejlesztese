@@ -21,6 +21,8 @@ from PIL import Image, ImageDraw
 from pydantic import BaseModel
 from starlette.datastructures import State
 from tenacity import retry, stop_after_attempt, wait_exponential
+from neo4j import AsyncGraphDatabase
+import json
 
 load_dotenv()
 
@@ -38,11 +40,25 @@ class AppState(State):
 class TypedFastAPI(FastAPI):
     state: AppState
 
+class GraphDocumentInput(BaseModel):
+    text: str
 
 def get_app_state(request: Request) -> AppState:
     typed_app = cast(TypedFastAPI, request.app)
     return cast(AppState, typed_app.state)
 
+class UpdateGraphRequest(BaseModel):
+    old_source: str
+    old_target: str
+    old_relationship: str
+    new_source: str
+    new_target: str
+    new_relationship: str
+
+class DeleteRelationRequest(BaseModel):
+    source: str
+    target: str
+    relationship: str
 
 @asynccontextmanager
 async def lifespan(app: TypedFastAPI):
@@ -53,11 +69,18 @@ async def lifespan(app: TypedFastAPI):
     app.state.mongo_client = mongo_client
     app.state.chat_collection = mongo_client["mi_kurzus"]["chat_history"]
 
+    # Neo4j csatlakozás hozzáadása
+    neo4j_driver = AsyncGraphDatabase.driver(
+        "bolt://localhost:7687", auth=("neo4j", "password123")
+    )
+    app.state.neo4j_driver = neo4j_driver
+
     try:
         yield
     finally:
         mongo_client.close()
         await groq_client.close()
+        await neo4j_driver.close()
 
 
 class ChatInput(BaseModel):
@@ -652,3 +675,171 @@ async def detect_and_crop(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/get_chats/{session_id}")
+async def get_chats(session_id: str, request: Request):
+    state = get_app_state(request)
+    chat_coll = state.chat_collection
+    try:
+        # Lekérdjük az adott session üzeneteit időrendben
+        cursor = chat_coll.find({"session_id": session_id}).sort("timestamp", 1)
+        docs = await cursor.to_list(length=100)
+
+        # Az ObjectId-t át kell alakítani string-gé a JSON válasz miatt
+        for doc in docs:
+            doc["_id"] = str(doc["_id"])
+
+        return {"session_id": session_id, "messages": docs}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+@app.get("/get_all_chats")
+async def get_all_chats(request: Request):
+    state = get_app_state(request)
+    chat_coll = state.chat_collection
+    try:
+        cursor = chat_coll.find({}).sort("timestamp", -1).limit(100)
+        docs = await cursor.to_list(length=100)
+        for doc in docs:
+            doc["_id"] = str(doc["_id"])
+        return {"total": len(docs), "messages": docs}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/extract_graph")
+async def extract_graph(doc: GraphDocumentInput, request: Request):
+    """Gráf alapú Tudáskinyerés (GraphRAG) Groq / Qwen segítségével"""
+    state = get_app_state(request)
+    groq_client = state.groq_client
+    neo4j_driver = state.neo4j_driver
+
+    extraction_prompt = f"""
+    Az alábbi szövegből nyerj ki entitásokat (személyek, helyszínek, technológiák, fogalmak) és a köztük lévő logikai vagy cselekvési kapcsolatokat. 
+    A kimeneted KIZÁRÓLAG egy érvényes JSON tömb (array) legyen, semmi más szöveg, markdown kódblokk se (ne használj ```json ... ``` taget, csak tiszta JSON szöveget!).
+    A JSON tömb minden eleme egy objektum legyen ezzel a struktúrával:
+    {{
+        "source": "Entitás 1 neve",
+        "source_label": "Entitás 1 típusa (pl. Person, Technology, Concept)",
+        "target": "Entitás 2 neve",
+        "target_label": "Entitás 2 típusa",
+        "relationship": "KAPCSOLAT_TÍPUSA (Csupa nagybetűvel, pl. HASZNÁLJA, FELESÉGE, RÉSZE)"
+    }}
+
+    Szöveg:
+    {doc.text}
+    """
+
+    try:
+        response = await cast(Any, groq_client.chat.completions).create(
+            model="qwen/qwen3.8-27b",
+            messages=[{"role": "user", "content": extraction_prompt}],
+            temperature=0.1,
+            max_tokens=2000,
+        )
+
+        raw_text = response.choices[0].message.content.strip()
+
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:-3]
+        elif raw_text.startswith("```"):
+            raw_text = raw_text[3:-3]
+
+        relations = json.loads(raw_text.strip())
+
+        async with neo4j_driver.session() as session:
+            for rel in relations:
+                query = f"""
+                MERGE (a:`{rel['source_label']}` {{name: $source_name}})
+                MERGE (b:`{rel['target_label']}` {{name: $target_name}})
+                MERGE (a)-[r:`{rel['relationship']}`]->(b)
+                """
+                await session.run(
+                    query,
+                    source_name=rel["source"],
+                    target_name=rel["target"]
+                )
+
+        return {
+            "status": "ok",
+            "message": f"{len(relations)} reláció sikeresen kinyerve és elmentve a gráfba.",
+            "extracted_data": relations
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+@app.get("/get_graph")
+async def get_graph(request: Request):
+    """Minden elmentett reláció lekérdezése a Neo4j gráfadatbázisból"""
+    state = get_app_state(request)
+    neo4j_driver = state.neo4j_driver
+
+    try:
+        async with neo4j_driver.session() as session:
+            # Cypher lekérdezés az összes kapcsolat és csomópont lekérésére
+            query = """
+            MATCH (a)-[r]->(b)
+            RETURN a.name AS source, labels(a)[0] AS source_label, 
+                   type(r) AS relationship, 
+                   b.name AS target, labels(b)[0] AS target_label
+            """
+            result = await session.run(query)
+            records = await result.data()
+
+            relations = []
+            for record in records:
+                relations.append({
+                    "source": record["source"],
+                    "source_label": record["source_label"],
+                    "target": record["target"],
+                    "target_label": record["target_label"],
+                    "relationship": record["relationship"]
+                })
+
+        return {
+            "status": "ok",
+            "total_relations": len(relations),
+            "extracted_data": relations
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+@app.put("/update_graph_relation")
+async def update_graph_relation(request: Request, data: UpdateGraphRequest):
+    """Hibás Neo4j kapcsolat módosítása"""
+    state = get_app_state(request)
+    neo4j_driver = state.neo4j_driver
+
+    try:
+        async with neo4j_driver.session() as session:
+            # Cypher parancs: töröljük a régi kapcsolatot, és létrehozzuk/összekötjük az újat
+            query = """
+            MATCH (a {name: $old_source})-[r:""" + data.old_relationship + """]->(b {name: $old_target})
+            DELETE r
+            MERGE (n1 {name: $new_source})
+            MERGE (n2 {name: $new_target})
+            CREATE (n1)-[new_r:""" + data.new_relationship + """]->(n2)
+            RETURN type(new_r) AS rel
+            """
+            # Megjegyzés: a biztonság kedvéért érdemes dinamikus query helyett paraméterezni,
+            # de a relációtípust a Cypher nem engedi közvetlenül paraméterként ($var),
+            # ezért a string-összefűzést vagy strict validációt kell használni.
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/delete_graph_relation")
+async def delete_graph_relation(request: Request, data: DeleteRelationRequest):
+    state = get_app_state(request)
+    neo4j_driver = state.neo4j_driver
+
+    async with neo4j_driver.session() as session:
+        query = """
+        MATCH (a {name: $source})-[r]->(b {name: $target})
+        WHERE type(r) = $relationship
+        DELETE r
+        """
+        await session.run(query, source=data.source, target=data.target, relationship=data.relationship)
+
+    return {"status": "ok", "message": "Kapcsolat sikeresen törölve a gráfból."}
