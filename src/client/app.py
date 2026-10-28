@@ -6,6 +6,7 @@ import mimetypes
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from streamlit_agraph import agraph, Node, Edge, Config
 
 API_BASE_URL = "http://127.0.0.1:8000"
 
@@ -25,12 +26,13 @@ st.sidebar.divider()
 st.sidebar.caption(f"Session ID:\n`{st.session_state.get('session_id', 'Nincs')}`")
 
 # --- FŐOLDALI FÜLEK ---
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📚 Dokumentum Feltöltés",
     "💬 Chat Memóriával",
     "🗂️ Adatbázis",
     "👁️ Gépi Látás & Képvágás",
-    "🎯 Waldo Kereső"
+    "🎯 Waldo Kereső",
+    "🕸️ Tudásgráf (GraphRAG)"
 ])
 
 # --- TAB 1: Dokumentum Feltöltés ---
@@ -81,7 +83,9 @@ with tab1:
                         res_data = response.json()
                         if res_data:
                             st.success(f"✅ {res_data.get('message', 'Siker')}")
-                            st.image(uploaded_rag_image, caption=f"Feltöltve: {res_data.get('filename', uploaded_rag_image.name)}", width=300)
+                            st.image(uploaded_rag_image,
+                                     caption=f"Feltöltve: {res_data.get('filename', uploaded_rag_image.name)}",
+                                     width=300)
                             with st.expander("📝 Generált / Mentett kontextus"):
                                 st.write(res_data.get("generated_description", ""))
                         else:
@@ -91,72 +95,123 @@ with tab1:
                 except Exception as e:
                     st.error(f"Hiba: {e}")
 
-# --- TAB 2: Chat Memóriával ---
+# --- TAB 2: Chat Memóriával & MongoDB ---
 with tab2:
-    st.header("Tudásalapú Kérdezz-Felelek & Chat")
+    st.header("💬 Chat, RAG és Adatbázis Napló")
 
-    user_query = st.text_input("Kérdezz a feltöltött dokumentumokból (RAG):", key="chat_rag_query")
-    if st.button("RAG Válasz 🚀", key="chat_rag_btn"):
-        if user_query.strip():
-            with st.spinner('Keresés, képek betöltése és válasz generálása Groq-kal...'):
+    # Alfülek létrehozása a Chat fülön belül
+    chat_sub_tab1, chat_sub_tab2 = st.tabs(["💬 Élő Chat & RAG", "🗄️ MongoDB Üzenetek (Admin)"])
+
+    # --- 2.1 Alfüzet: Élő Chat & RAG ---
+    with chat_sub_tab1:
+        st.subheader("Tudásalapú Kérdezz-Felelek & Chat")
+
+        user_query = st.text_input("Kérdezz a feltöltött dokumentumokból (RAG):", key="chat_rag_query")
+        if st.button("RAG Válasz 🚀", key="chat_rag_btn"):
+            if user_query.strip():
+                with st.spinner('Keresés, képek betöltése és válasz generálása Groq-kal...'):
+                    try:
+                        res = requests.post(f"{API_BASE_URL}/ask_rag", json={"prompt": user_query})
+                        if res.status_code == 200:
+                            data = res.json()
+                            if data:
+                                st.markdown("### 🤖 MI Válasza:")
+                                st.write(data.get("llm_response", "Nincs válasz."))
+
+                                matched_images = data.get("matched_images", [])
+                                if matched_images:
+                                    st.markdown("##### 🖼️ A válaszhoz felhasznált kép(ek):")
+                                    cols = st.columns(len(matched_images))
+                                    for idx, img_filename in enumerate(matched_images):
+                                        with cols[idx]:
+                                            img_url = f"{API_BASE_URL}/get_image/{img_filename}"
+                                            st.image(img_url, caption=img_filename, width=250)
+
+                                with st.expander("🔍 Felhasznált szöveges kontextus"):
+                                    st.write(data.get("retrieved_context", ""))
+                            else:
+                                st.warning("Üres választ adott a szerver.")
+                        else:
+                            st.error(res.text)
+                    except Exception as e:
+                        st.error(f"Hiba: {e}")
+
+        st.divider()
+
+        # 1. ELŐSZÖR kirajzoljuk az eddigi üzeneteket a history-ból
+        for msg in st.session_state.chat_history:
+            with st.chat_message("user" if msg["role"] == "user" else "assistant"):
+                st.markdown(msg["content"])
+
+        # Hagyományos szövegmező és gomb a válaszok alatt
+        with st.form(key="chat_form", clear_on_submit=True):
+            prompt = st.text_input("Beszélgess a memóriával rendelkező asszisztenssel...",
+                                   placeholder="Írd ide az üzenetet...")
+            submit_button = st.form_submit_button("Küldés 🚀")
+
+        if submit_button and prompt.strip():
+            # Felhasználói üzenet megjelenítése
+            st.session_state.chat_history.append({"role": "user", "content": prompt})
+
+            with st.spinner("Groq generálás..."):
                 try:
-                    res = requests.post(f"{API_BASE_URL}/ask_rag", json={"prompt": user_query})
+                    res = requests.post(
+                        f"{API_BASE_URL}/chat",
+                        json={"session_id": st.session_state.session_id, "prompt": prompt}
+                    )
                     if res.status_code == 200:
                         data = res.json()
-                        if data:
-                            st.markdown("### 🤖 MI Válasza:")
-                            st.write(data.get("llm_response", "Nincs válasz."))
-
-                            matched_images = data.get("matched_images", [])
-                            if matched_images:
-                                st.markdown("##### 🖼️ A válaszhoz felhasznált kép(ek):")
-                                cols = st.columns(len(matched_images))
-                                for idx, img_filename in enumerate(matched_images):
-                                    with cols[idx]:
-                                        img_url = f"{API_BASE_URL}/get_image/{img_filename}"
-                                        st.image(img_url, caption=img_filename, width=250)
-
-                            with st.expander("🔍 Felhasznált szöveges kontextus"):
-                                st.write(data.get("retrieved_context", ""))
-                        else:
-                            st.warning("Üres választ adott a szerver.")
+                        reply = data.get("response", "") if data else "Nincs válasz."
+                        st.session_state.chat_history.append({"role": "assistant", "content": reply})
+                        st.rerun()  # Újratöltés, hogy látszódjon az új üzenet
                     else:
                         st.error(res.text)
                 except Exception as e:
                     st.error(f"Hiba: {e}")
 
-    st.divider()
+        # --- 2.2 Alfüzet: MongoDB Üzenetek (Admin Nézet) ---
+        with chat_sub_tab2:
+            st.subheader("🗄️ MongoDB Adatbázis - Chat Előzmények")
+            st.markdown("Itt ellenőrizheted valós időben a MongoDB-be mentett üzeneteket.")
 
-    # 1. ELŐSZÖR kirajzoljuk az eddigi üzeneteket a history-ból
-    for msg in st.session_state.chat_history:
-        with st.chat_message("user" if msg["role"] == "user" else "assistant"):
-            st.markdown(msg["content"])
+            # Opció 1: Összes üzenet lekérése az adatbázisból
+            if st.button("🌐 Összes üzenet lekérdezése a DB-ből (Session független)", key="fetch_all_chats_btn"):
+                try:
+                    res = requests.get(f"{API_BASE_URL}/get_all_chats")
+                    if res.status_code == 200:
+                        data = res.json()
+                        messages = data.get("messages", [])
+                        if messages:
+                            st.success(f"Összesen {len(messages)} üzenet található a MongoDB-ben!")
+                            st.json(messages)
+                        else:
+                            st.warning("A MongoDB adatbázis teljesen üres.")
+                    else:
+                        st.error(res.text)
+                except Exception as e:
+                    st.error(f"Hiba: {e}")
 
-    # Hagyományos szövegmező és gomb, amit pontosan oda teszünk, ahová szeretnéd (a válaszok alá)
-    with st.form(key="chat_form", clear_on_submit=True):
-        prompt = st.text_input("Beszélgess a memóriával rendelkező asszisztenssel...",
-                               placeholder="Írd ide az üzenetet...")
-        submit_button = st.form_submit_button("Küldés 🚀")
+            st.divider()
 
-    if submit_button and prompt.strip():
-        # Felhasználói üzenet megjelenítése
-        st.session_state.chat_history.append({"role": "user", "content": prompt})
+            # Opció 2: Adott Session ID szerinti lekérdezés
+            inspect_session_id = st.text_input("Vagy vizsgált Session ID szerint:", value=st.session_state.session_id,
+                                               key="inspect_session")
 
-        with st.spinner("Groq generálás..."):
-            try:
-                res = requests.post(
-                    f"{API_BASE_URL}/chat",
-                    json={"session_id": st.session_state.session_id, "prompt": prompt}
-                )
-                if res.status_code == 200:
-                    data = res.json()
-                    reply = data.get("response", "") if data else "Nincs válasz."
-                    st.session_state.chat_history.append({"role": "assistant", "content": reply})
-                    st.rerun()  # Az oldal újratöltése, hogy azonnal látszódjon az új üzenet és a mező utána maradjon
-                else:
-                    st.error(res.text)
-            except Exception as e:
-                st.error(f"Hiba: {e}")
+            if st.button("🔄 Üzenetek lekérdezése adott Session-höz", key="fetch_mongo_chats_btn"):
+                try:
+                    res = requests.get(f"{API_BASE_URL}/get_chats/{inspect_session_id}")
+                    if res.status_code == 200:
+                        data = res.json()
+                        messages = data.get("messages", [])
+                        if messages:
+                            st.success(f"Találat: {len(messages)} üzenet ehhez a sessionhöz.")
+                            st.json(messages)
+                        else:
+                            st.warning("Nincsenek üzenetek mentve ehhez a sessionhöz.")
+                    else:
+                        st.error(res.text)
+                except Exception as e:
+                    st.error(f"Hiba: {e}")
 
 # --- TAB 3: Adatbázis (Vizuális kép- és szövegmegjelenítéssel) ---
 with tab3:
@@ -184,10 +239,12 @@ with tab3:
                                     img_url = f"{API_BASE_URL}/get_image/{basename}"
                                     st.image(img_url, caption=filename, width=300)
 
-                                st.text_area(f"Generált leírás (ID: {doc.get('id', '')})", doc.get('text', ''), height=80, disabled=True, key=f"area_{doc.get('id', '')}")
+                                st.text_area(f"Generált leírás (ID: {doc.get('id', '')})", doc.get('text', ''),
+                                             height=80, disabled=True, key=f"area_{doc.get('id', '')}")
                             else:
                                 st.markdown(f"**📝 Szöveges dokumentum**")
-                                st.text_area(f"Tartalom (ID: {doc.get('id', '')})", doc.get('text', ''), height=100, disabled=True, key=f"area_{doc.get('id', '')}")
+                                st.text_area(f"Tartalom (ID: {doc.get('id', '')})", doc.get('text', ''), height=100,
+                                             disabled=True, key=f"area_{doc.get('id', '')}")
                             st.divider()
                 else:
                     st.warning("Az adatbázis válasza üres volt.")
@@ -300,7 +357,7 @@ with tab5:
 
         - **🎨 Szín- és minta-összezavarodás (Vizuális tévedés):** 
           Mivel a modell a zsúfolt képeken egyszerre próbálja figyelni a formákat és a színeket, gyakran előfordulhat az a hiba, hogy **a piros-fehér ruhás Waldo helyett egy kék ruhás vagy más színű figurát jelöl be**. Ennek az az oka, hogy a vizuális modul a keresett formát (pl. a sapkát vagy a csíkokat) összetéveszti a környezetében lévő más, kontrasztos figurákkal.
-        
+
         Súgó: Waldo helyzete a nagy fesztiváli képen: [ymin:255, xmin:812, ymax:355, xmax:888] 
         """)
 
@@ -414,3 +471,185 @@ with tab5:
             except Exception as e:
                 status_box.update(label="Hiba történt.", state="error")
                 st.error(f"Hiba: {e}")
+
+with tab6:
+    st.header("🕸️ Tudásgráf Építő és Megjelenítő (Groq + Neo4j)")
+
+    # Alfülek létrehozása a Tudásgráf fülön belül
+    graph_sub_tab1, graph_sub_tab2 = st.tabs(["✍️ Új Gráf Építése", "📊 Mentett Gráfok Megtekintése (DB)"])
+
+    # --- 6.1 Alfül: Új Gráf Építése szövegből ---
+    with graph_sub_tab1:
+        st.subheader("Szöveg elemzése és mentése a Neo4j-be")
+        graph_text = st.text_area("Másolj be egy szakmai szöveget a gráf építéséhez:", height=150,
+                                  placeholder="Pl.: Harry Potter a Roxfortban tanul, amit Albus Dumbledore vezet...",
+                                  key="graph_text_input")
+
+        if st.button("Relációk Kinyerése és Mentés 🚀", type="primary", key="extract_graph_btn"):
+            if graph_text.strip() == "":
+                st.warning("Kérlek, írj be valamilyen szöveget!")
+            else:
+                with st.spinner("Szöveg elemzése Groq-kal és mentés a Neo4j adatbázisba..."):
+                    try:
+                        response = requests.post(
+                            f"{API_BASE_URL}/extract_graph",
+                            json={"text": graph_text}
+                        )
+                        if response.status_code == 200:
+                            data = response.json()
+                            st.success(f"✅ {data.get('message')}")
+                            extracted_data = data.get("extracted_data", [])
+
+                            if extracted_data:
+                                nodes = []
+                                edges = []
+                                added_nodes = set()
+
+                                for rel in extracted_data:
+                                    source = rel.get("source")
+                                    target = rel.get("target")
+                                    relation = rel.get("relationship")
+
+                                    if source not in added_nodes:
+                                        nodes.append(Node(id=source, label=source, size=25, color="#4CAF50"))
+                                        added_nodes.add(source)
+                                    if target not in added_nodes:
+                                        nodes.append(Node(id=target, label=target, size=25, color="#2196F3"))
+                                        added_nodes.add(target)
+
+                                    edges.append(Edge(source=source, label=relation, target=target, color="#FF9800"))
+
+                                config = Config(
+                                    width="100%",
+                                    height=500,
+                                    directed=True,
+                                    hierarchical=False,
+                                    nodeHighlightBehavior=True,
+                                    highlightColor="#F7A7A6",
+                                    collapsible=False,
+                                    link={'labelProperty': 'label', 'renderLabel': True},
+                                    physics={
+                                        "barnesHut": {
+                                            "gravitationalConstant": -30000,
+                                            "centralGravity": 0.3,
+                                            "springLength": 250,
+                                            "springConstant": 0.05,
+                                            "avoidOverlap": 1
+                                        }
+                                    }
+                                )
+
+                                st.markdown("### 🕸️ Frissen kinyert gráf vizualizációja")
+                                agraph(nodes=nodes, edges=edges, config=config)
+                        else:
+                            st.error(f"Hiba a szerver oldalon: {response.text}")
+                    except Exception as e:
+                        st.error(f"❌ Kapcsolódási hiba: {e}")
+
+        # --- 6.2 Alfül: Már elmentett adatbázis lekérdezése, olvasása és karbantartása ---
+        with graph_sub_tab2:
+            st.subheader("📊 Neo4j Adatbázis Tartalma & Menedzsment")
+            st.write(
+                "Itt tudod lekérdezni, vizualizálni és karbantartani a Neo4j-be eddig elmentett összes kapcsolatot.")
+
+            # Adatok betöltése gomb
+            if st.button("🔄 Adatbázis betöltése és kirajzolása", type="primary", key="load_db_graph_btn"):
+                with st.spinner("Adatok lekérdezése a Neo4j adatbázisból..."):
+                    try:
+                        response = requests.get(f"{API_BASE_URL}/get_graph")
+                        if response.status_code == 200:
+                            data = response.json()
+                            st.session_state.db_extracted_data = data.get("extracted_data", [])
+                            st.success(
+                                f"✅ Sikeresen betöltve! Összesen {len(st.session_state.db_extracted_data)} kapcsolat található.")
+                        else:
+                            st.error(f"Hiba a szerver oldalon: {response.text}")
+                    except Exception as e:
+                        st.error(f"❌ Kapcsolódási hiba: {e}")
+
+            # Ha már vannak adatok a session_state-ben, kirajzoljuk és kezelhetővé tesszük őket
+            if "db_extracted_data" in st.session_state and st.session_state.db_extracted_data:
+                extracted_data = st.session_state.db_extracted_data
+
+                nodes = []
+                edges = []
+                added_nodes = set()
+
+                for rel in extracted_data:
+                    source = rel.get("source")
+                    target = rel.get("target")
+                    relation = rel.get("relationship")
+
+                    if source not in added_nodes:
+                        nodes.append(Node(id=source, label=source, size=25, color="#4CAF50"))
+                        added_nodes.add(source)
+                    if target not in added_nodes:
+                        nodes.append(Node(id=target, label=target, size=25, color="#2196F3"))
+                        added_nodes.add(target)
+
+                    edges.append(Edge(source=source, label=relation, target=target, color="#FF9800"))
+
+                config = Config(
+                    width="100%",
+                    height=500,
+                    directed=True,
+                    hierarchical=False,
+                    nodeHighlightBehavior=True,
+                    highlightColor="#F7A7A6",
+                    collapsible=False,
+                    link={'labelProperty': 'label', 'renderLabel': True},
+                    physics={
+                        "barnesHut": {
+                            "gravitationalConstant": -30000,
+                            "centralGravity": 0.3,
+                            "springLength": 250,
+                            "springConstant": 0.05,
+                            "avoidOverlap": 1
+                        }
+                    }
+                )
+
+                st.markdown("### 🕸️ Teljes Neo4j Vizuális Tudásgráf")
+                agraph(nodes=nodes, edges=edges, config=config)
+
+                with st.expander("📋 Nyers adatok (JSON / Táblázat) megtekintése"):
+                    st.table(extracted_data)
+
+                st.divider()
+                st.subheader("🗑️ Hibás kapcsolat törlése")
+                st.markdown("Ha egy kapcsolat helytelenül szerepel a gráfban, itt kiválaszthatod és eltávolíthatod:")
+
+                # Létrehozunk egy áttekinthető listát a kapcsolatokról a legördülőhöz
+                rel_options = [
+                    f"{r.get('source')} --[{r.get('relationship')}]--> {r.get('target')}"
+                    for r in extracted_data
+                ]
+
+                selected_rel_str = st.selectbox("Válaszd ki a törölni kívánt kapcsolatot:", options=rel_options,
+                                                key="select_del_rel")
+
+                if st.button("Kiválasztott kapcsolat törlése ❌", type="secondary", key="delete_rel_btn"):
+                    # Megkeressük a kiválasztott elem adatait
+                    selected_idx = rel_options.index(selected_rel_str)
+                    target_rel = extracted_data[selected_idx]
+
+                    try:
+                        del_response = requests.post(
+                            f"{API_BASE_URL}/delete_graph_relation",
+                            json={
+                                "source": target_rel.get("source"),
+                                "target": target_rel.get("target"),
+                                "relationship": target_rel.get("relationship")
+                            }
+                        )
+                        if del_response.status_code == 200:
+                            st.success("✅ A kapcsolat sikeresen törölve a Neo4j adatbázisból!")
+                            # Töröljük a session_state-ből, hogy újra lekérje a friss adatot
+                            del st.session_state.db_extracted_data
+                            st.rerun()
+                        else:
+                            st.error(f"Hiba a törlés során: {del_response.text}")
+                    except Exception as e:
+                        st.error(f"❌ Kapcsolódási hiba: {e}")
+            else:
+                st.info("Kattints a fenti gombra az adatbázis tartalmának betöltéséhez.")
