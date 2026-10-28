@@ -193,25 +193,44 @@ with tab2:
 
             st.divider()
 
-            # Opció 2: Adott Session ID szerinti lekérdezés
-            inspect_session_id = st.text_input("Vagy vizsgált Session ID szerint:", value=st.session_state.session_id,
-                                               key="inspect_session")
+            # Opció 2: Lenyíló lista a meglévő Session ID-k alapján történő szűréshez
+            st.subheader("🔍 Szűrés meglévő Session ID alapján")
 
-            if st.button("🔄 Üzenetek lekérdezése adott Session-höz", key="fetch_mongo_chats_btn"):
-                try:
-                    res = requests.get(f"{API_BASE_URL}/get_chats/{inspect_session_id}")
-                    if res.status_code == 200:
-                        data = res.json()
-                        messages = data.get("messages", [])
-                        if messages:
-                            st.success(f"Találat: {len(messages)} üzenet ehhez a sessionhöz.")
-                            st.json(messages)
-                        else:
-                            st.warning("Nincsenek üzenetek mentve ehhez a sessionhöz.")
+            try:
+                # Lekérjük az egyedi sessionöket a backendről
+                sess_response = requests.get(f"{API_BASE_URL}/get_sessions")
+                if sess_response.status_code == 200:
+                    sessions = sess_response.json().get("sessions", [])
+
+                    if sessions:
+                        # Kiválasztó legördülő menü a véletlenszerű beírás helyett
+                        selected_session_id = st.selectbox(
+                            "Válassz egy létező Session ID-t:",
+                            options=sessions,
+                            key="inspect_session_selectbox"
+                        )
+
+                        if st.button("🔄 Üzenetek lekérdezése adott Session-höz", key="fetch_mongo_chats_btn"):
+                            try:
+                                res = requests.get(f"{API_BASE_URL}/get_chats/{selected_session_id}")
+                                if res.status_code == 200:
+                                    data = res.json()
+                                    messages = data.get("messages", [])
+                                    if messages:
+                                        st.success(f"Találat: {len(messages)} üzenet ehhez a sessionhöz.")
+                                        st.json(messages)
+                                    else:
+                                        st.warning("Nincsenek üzenetek mentve ehhez a sessionhöz.")
+                                else:
+                                    st.error(res.text)
+                            except Exception as e:
+                                st.error(f"Hiba: {e}")
                     else:
-                        st.error(res.text)
-                except Exception as e:
-                    st.error(f"Hiba: {e}")
+                        st.info("Még nincsenek rögzített sessionök a MongoDB adatbázisban.")
+                else:
+                    st.error("Nem sikerült lekérni a sessionök listáját a szervertől.")
+            except Exception as e:
+                st.error(f"❌ Kapcsolódási hiba a sessionök lekérdezésekor: {e}")
 
 # --- TAB 3: Adatbázis (Vizuális kép- és szövegmegjelenítéssel) ---
 with tab3:
@@ -253,7 +272,6 @@ with tab3:
         except Exception as e:
             st.error(f"Szerver hiba: {e}")
 
-# --- TAB 4: Gépi Látás és Képvágás ---
 # --- TAB 4: Gépi Látás és Képvágás ---
 with tab4:
     st.header("👁️ Gépi Látás & Objektumdetektálás")
@@ -552,7 +570,6 @@ with tab6:
             st.write(
                 "Itt tudod lekérdezni, vizualizálni és karbantartani a Neo4j-be eddig elmentett összes kapcsolatot.")
 
-            # Adatok betöltése gomb
             if st.button("🔄 Adatbázis betöltése és kirajzolása", type="primary", key="load_db_graph_btn"):
                 with st.spinner("Adatok lekérdezése a Neo4j adatbázisból..."):
                     try:
@@ -567,7 +584,6 @@ with tab6:
                     except Exception as e:
                         st.error(f"❌ Kapcsolódási hiba: {e}")
 
-            # Ha már vannak adatok a session_state-ben, kirajzoljuk és kezelhetővé tesszük őket
             if "db_extracted_data" in st.session_state and st.session_state.db_extracted_data:
                 extracted_data = st.session_state.db_extracted_data
 
@@ -619,7 +635,6 @@ with tab6:
                 st.subheader("🗑️ Hibás kapcsolat törlése")
                 st.markdown("Ha egy kapcsolat helytelenül szerepel a gráfban, itt kiválaszthatod és eltávolíthatod:")
 
-                # Létrehozunk egy áttekinthető listát a kapcsolatokról a legördülőhöz
                 rel_options = [
                     f"{r.get('source')} --[{r.get('relationship')}]--> {r.get('target')}"
                     for r in extracted_data
