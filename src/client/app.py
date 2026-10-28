@@ -72,7 +72,7 @@ with tab1:
 
         if st.button("Kép Mentése a Tudásbázisba 🚀", type="primary", key="save_rag_image_btn"):
             if uploaded_rag_image is None:
-                st.warning("Kérlek, tölts fel egy képet!")
+                st.warning("Kérlek, tölts fel egy .jpg vagy .jpeg kiterjesztésű képet!")
             else:
                 try:
                     files = {"files": (uploaded_rag_image.name, uploaded_rag_image.getvalue(),
@@ -255,8 +255,15 @@ with tab3:
 
                                 st.markdown(f"**🖼️ Kép dokumentum** (Fájlnév: `{filename}`)")
                                 if basename:
-                                    img_url = f"{API_BASE_URL}/get_image/{basename}"
-                                    st.image(img_url, caption=filename, width=300)
+                                    try:
+                                        # Letöltjük a kép bájtjait a backendről, így elkerüljük az URL/szóköz problémákat
+                                        img_response = requests.get(f"{API_BASE_URL}/get_image/{basename}")
+                                        if img_response.status_code == 200:
+                                            st.image(img_response.content, caption=filename, width=300)
+                                        else:
+                                            st.warning(f"A kép nem tölthető be (Státusz: {img_response.status_code})")
+                                    except Exception as e:
+                                        st.error(f"Hiba a kép letöltésekor: {e}")
 
                                 st.text_area(f"Generált leírás (ID: {doc.get('id', '')})", doc.get('text', ''),
                                              height=80, disabled=True, key=f"area_{doc.get('id', '')}")
