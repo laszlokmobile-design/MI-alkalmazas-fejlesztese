@@ -6,6 +6,7 @@
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)
 ![MongoDB](https://img.shields.io/badge/MongoDB-4EA94B?style=flat&logo=mongodb&logoColor=white)
 ![Pydantic](https://img.shields.io/badge/Pydantic-E92063?style=flat&logo=pydantic&logoColor=white)
+![Neo4j](https://img.shields.io/badge/Neo4j-008CC1?style=flat&logo=neo4j&logoColor=white)
 
 # Projekt előrehaladása
 
@@ -16,7 +17,7 @@
 
 ### 📌 Összegzés a beadandó struktúrájához:
 * **Patch (Minimum):** Groq LPU migráció (Gemini lecserélése, aszinkron kliens). Forkolás linkje: https://github.com/laszlokmobile-design/complex-ai-applications
-* **Minor (Közép):** Több kép egyidejű feltöltése és feldolgozása a Gépi Látás (Vision) modulban (*Multi-image support*), Képi alapú RAG-gal (a képeket egy külön mappába menti: "/uploads") történő kiegészítése a meglévő csak szöveges mellé. A chatelés során a RAG-ban lévő képeket is el tudja a program küldeni a használatban lévő modellnek.
+* **Minor (Közép):** Több kép egyidejű feltöltése és feldolgozása a Gépi Látás (Vision) modulban (*Multi-image support*), Képi alapú RAG-gal (a képeket egy külön mappába menti: "/uploads") történő kiegészítése a meglévő csak szöveges mellé. A chatelés során a RAG-ban lévő képeket is el tudja a program küldeni a használatban lévő modellnek. MongoDB adatbázis napló megtekintése. Gráfadatbázis kiegészítés: Az összes gráf egyszerre történő megtekintése, illetve törlési lehetőség a kapcsolatok között.
 * **Major (Haladó):** A **Waldo Kereső modul** (5. fül, PIL rajzolás: a kapott koordináta pontokat összeköti a program, Regex koordináta-kinyerés: a modell pontokat ad meg amelyen belül határozza meg Waldo helyzetét, aszinkron `ThreadPoolExecutor` folyamatkövetés) valamint az **Objektumdetektálás és kivágás** (4. fül 2. alfül, A beküldött képből kivág egy kisebb részt a szövegdobozban megadott paraméterek szerint)**.
 ---
 
@@ -50,7 +51,7 @@ A projekt a legmodernebb ipari standardokra (Docker Compose) épül:
 * **Környezet**: Docker Compose (Python App + MongoDB konténerek közös hálózaton).
 * **Backend:** `FastAPI` (Aszinkron API), `Motor` (Aszinkron MongoDB driver) és `Pillow` (Memórián belüli képkezelés).
 * **Frontend:** `Streamlit` (Modern, Python-alapú chat UI).
-* **Adatbázisok:** `ChromaDB` (vektoroknak) és `MongoDB` (munkameneteknek és chat logoknak).
+* **Adatbázisok:** `ChromaDB` (vektoroknak) és `MongoDB` (munkameneteknek és chat logoknak) + Neo4j a gráfok létrehozásához, szerkesztéséhez.
 * **MI Integráció:** `groq` Python SDK (`AsyncGroq` és Qwen multimodális modellek).
 
 ---
@@ -63,11 +64,13 @@ A projekt futtatásához kétféle módszer közül választhatsz:
 
 ### A) Docker-alapú futtatás (Ajánlott és leggyorsabb, indítószkript: `start.bat`)
 - **Docker Desktop**: Futnia kell a gépeden (ez automatikusan felhúzza és kezeli a MongoDB adatbázist a háttérben).
+- **Neo4j**: Gráfok kezelésénél lesz szükség.
 - **Python 3.10+**: A helyi szkriptekhez és a Streamlit frontendhez.
 - **Groq API Kulcs**: Szerezz be egyet a [Groq Console](https://console.groq.com/)-ról és írd be a .env fájlba.
 
 ### B) Lokális futtatás (Docker nélkül, a `start.py` szkripttel)
 - **MongoDB**: Helyileg telepítve kell lennie a gépeden (és futnia kell a `localhost:27017` porton).
+- **Neo4j**: Gráfok kezelésénél lesz szükség.
 - **Python 3.10+**: A helyi szkriptekhez és a Streamlit frontendhez. Pycharm használata esetében be kell állítani az interpretert és a külső könyvtárakat telepíteni kell(`pip install -r requirements.txt`).
 - **Groq API Kulcs**: Szerezz be egyet a [Groq Console](https://console.groq.com/)-ról és írd be a .env fájlba.
 
