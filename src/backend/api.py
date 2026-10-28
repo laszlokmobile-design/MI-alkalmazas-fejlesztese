@@ -24,12 +24,18 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from neo4j import AsyncGraphDatabase
 import json
 
+
+
 load_dotenv()
 
-# Feltöltött képek mappája a szerveren
-UPLOAD_DIR = Path("./uploads")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 
+# Feltöltött képek mappája a szerveren
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+UPLOAD_DIR = BASE_DIR / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 class AppState(State):
     groq_client: AsyncGroq
@@ -57,13 +63,15 @@ async def lifespan(app: TypedFastAPI):
     groq_client = AsyncGroq()
     app.state.groq_client = groq_client
 
-    mongo_client = AsyncIOMotorClient("mongodb://localhost:27017")
+    MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+    mongo_client = AsyncIOMotorClient(MONGO_URI)
     app.state.mongo_client = mongo_client
     app.state.chat_collection = mongo_client["mi_kurzus"]["chat_history"]
 
     # Neo4j csatlakozás hozzáadása
     neo4j_driver = AsyncGraphDatabase.driver(
-        "bolt://localhost:7687", auth=("neo4j", "password123")
+        NEO4J_URI,
+        auth=(NEO4J_USER, NEO4J_PASSWORD)
     )
     app.state.neo4j_driver = neo4j_driver
 
@@ -89,6 +97,8 @@ app = TypedFastAPI(
         "segítségével."
     ),
 )
+from fastapi.staticfiles import StaticFiles
+app.mount("/static/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 waldo_progress: dict[str, dict] = {}
 
