@@ -47,14 +47,6 @@ def get_app_state(request: Request) -> AppState:
     typed_app = cast(TypedFastAPI, request.app)
     return cast(AppState, typed_app.state)
 
-class UpdateGraphRequest(BaseModel):
-    old_source: str
-    old_target: str
-    old_relationship: str
-    new_source: str
-    new_target: str
-    new_relationship: str
-
 class DeleteRelationRequest(BaseModel):
     source: str
     target: str
@@ -805,30 +797,6 @@ async def get_graph(request: Request):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-@app.put("/update_graph_relation")
-async def update_graph_relation(request: Request, data: UpdateGraphRequest):
-    """Hibás Neo4j kapcsolat módosítása"""
-    state = get_app_state(request)
-    neo4j_driver = state.neo4j_driver
-
-    try:
-        async with neo4j_driver.session() as session:
-            # Cypher parancs: töröljük a régi kapcsolatot, és létrehozzuk/összekötjük az újat
-            query = """
-            MATCH (a {name: $old_source})-[r:""" + data.old_relationship + """]->(b {name: $old_target})
-            DELETE r
-            MERGE (n1 {name: $new_source})
-            MERGE (n2 {name: $new_target})
-            CREATE (n1)-[new_r:""" + data.new_relationship + """]->(n2)
-            RETURN type(new_r) AS rel
-            """
-            # Megjegyzés: a biztonság kedvéért érdemes dinamikus query helyett paraméterezni,
-            # de a relációtípust a Cypher nem engedi közvetlenül paraméterként ($var),
-            # ezért a string-összefűzést vagy strict validációt kell használni.
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
 @app.post("/delete_graph_relation")
 async def delete_graph_relation(request: Request, data: DeleteRelationRequest):
     state = get_app_state(request)
@@ -843,3 +811,14 @@ async def delete_graph_relation(request: Request, data: DeleteRelationRequest):
         await session.run(query, source=data.source, target=data.target, relationship=data.relationship)
 
     return {"status": "ok", "message": "Kapcsolat sikeresen törölve a gráfból."}
+
+@app.get("/get_sessions")
+async def get_sessions(request: Request):
+    """Minden egyedi session_id lekérdezése a MongoDB-ből"""
+    state = get_app_state(request)
+    chat_coll = state.chat_collection
+    try:
+        sessions = await chat_coll.distinct("session_id")
+        return {"status": "ok", "sessions": sessions}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
