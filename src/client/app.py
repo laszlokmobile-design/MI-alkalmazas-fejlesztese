@@ -124,8 +124,16 @@ with tab2:
                                     cols = st.columns(len(matched_images))
                                     for idx, img_filename in enumerate(matched_images):
                                         with cols[idx]:
-                                            img_url = f"{API_BASE_URL}/get_image/{img_filename}"
-                                            st.image(img_url, caption=img_filename, width=250)
+                                            try:
+                                                # Letöltjük a kép bájtjait a backendről (biztosabb Dockerben is)
+                                                img_response = requests.get(f"{API_BASE_URL}/get_image/{img_filename}")
+                                                if img_response.status_code == 200:
+                                                    st.image(img_response.content, caption=img_filename, width=250)
+                                                else:
+                                                    st.warning(
+                                                        f"A kép nem tölthető be (Státusz: {img_response.status_code})")
+                                            except Exception as e:
+                                                st.error(f"Hiba a kép letöltésekor: {e}")
 
                                 with st.expander("🔍 Felhasznált szöveges kontextus"):
                                     st.write(data.get("retrieved_context", ""))
